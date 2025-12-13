@@ -17,6 +17,10 @@ status: In Progress
 - [ ] **Context Injection**
   - [ ] Implement `addFileContext` (`@file`)
   - [ ] Implement image upload
+- [x] **Agent Manager**
+  - [x] Implement `openAgentManager`
+  - [x] Implement `listAgentTasks`
+  - [x] Implement `approveTask` / `rejectTask`
 - [x] **Output Extraction**
   - [x] Implement code block extraction
   - [x] Implement thought extraction

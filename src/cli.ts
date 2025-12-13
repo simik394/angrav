@@ -162,4 +162,96 @@ outputCmd.command('code')
         }
     });
 
+// Agent Manager commands
+import { openAgentManager, listAgentTasks, approveTask, rejectTask, spawnAgent, AgentTask } from './manager';
+
+const managerCmd = program.command('manager')
+    .description('Control Agent Manager (Mission Control)');
+
+managerCmd.command('list')
+    .description('List all agent tasks')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, context } = await connectToApp();
+            const { frame } = await openAgentManager(context);
+            const tasks = await listAgentTasks(frame);
+            await browser.close();
+
+            output<AgentTask[]>(tasks, opts.json, (data) => {
+                if (data.length === 0) {
+                    console.log('No active tasks.');
+                    return;
+                }
+                console.log('\n=== Agent Tasks ===\n');
+                data.forEach(task => {
+                    console.log(`[${task.status.toUpperCase()}] ${task.id}`);
+                    console.log(`  Workspace: ${task.workspace}`);
+                    if (task.description) console.log(`  Description: ${task.description}`);
+                    console.log('');
+                });
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+managerCmd.command('approve')
+    .description('Approve a pending task')
+    .argument('<taskId>', 'Task ID to approve')
+    .action(async (taskId: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, context } = await connectToApp();
+            const { frame } = await openAgentManager(context);
+            const success = await approveTask(frame, taskId);
+            await browser.close();
+
+            output({ taskId, approved: success }, opts.json, () => {
+                console.log(success ? `✅ Task ${taskId} approved.` : `❌ Failed to approve task ${taskId}.`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+managerCmd.command('reject')
+    .description('Reject a pending task')
+    .argument('<taskId>', 'Task ID to reject')
+    .action(async (taskId: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, context } = await connectToApp();
+            const { frame } = await openAgentManager(context);
+            const success = await rejectTask(frame, taskId);
+            await browser.close();
+
+            output({ taskId, rejected: success }, opts.json, () => {
+                console.log(success ? `❌ Task ${taskId} rejected.` : `⚠️ Failed to reject task ${taskId}.`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+managerCmd.command('spawn')
+    .description('Spawn a new agent')
+    .argument('<workspace>', 'Workspace path')
+    .argument('<task>', 'Task description')
+    .action(async (workspace: string, task: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, context } = await connectToApp();
+            const { frame } = await openAgentManager(context);
+            const newTaskId = await spawnAgent(frame, workspace, task);
+            await browser.close();
+
+            output({ taskId: newTaskId, workspace, task }, opts.json, () => {
+                console.log(`🚀 Agent spawned with ID: ${newTaskId}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 program.parse();
