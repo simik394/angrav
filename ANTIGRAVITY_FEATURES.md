@@ -50,3 +50,13 @@ To effectively manage development tasks performed by Antigravity agents, the fol
 - **Switch Conversation mode:**
   - **Handle:** Click the dropdown (actually rollup) located right on the left side of the model one. there are options "planning" and "fast". 
   you should chose the one appropriate to your current situation.
+
+## 7. Langfuse Telemetry *(Mid-Low Priority)*
+*Observability Requirement:* Track agent performance, debug complex interactions, and analyze behavior patterns.
+- **Trace Agent Operations:**
+  - **Handle:** Wrap all operations with Langfuse traces and spans.
+  - **Purpose:** Full visibility into agent execution flow and timing.
+- **Cost Tracking:**
+  - **Handle:** Capture token usage for LLM operations.
+  - **Purpose:** Monitor and optimize operational costs.
+- **Specification:** See [[langfuse_telemetry_spec|langfuse_telemetry_spec.md]]
