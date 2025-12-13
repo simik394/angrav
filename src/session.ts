@@ -82,7 +82,7 @@ export async function getConversationHistory(frame: Frame): Promise<Conversation
         } else {
             // User Content
             // Selector from specs: span[data-lexical-text="true"]
-            const userTextEl = row.locator('span[data-lexical-text="true"]');
+            const userTextEl = row.locator('span[data-lexical-text="true"]').first();
             if (await userTextEl.count() > 0) {
                 const content = await userTextEl.innerText();
                 messages.push({ role: 'user', content });
