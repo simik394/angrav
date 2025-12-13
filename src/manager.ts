@@ -15,55 +15,49 @@ export interface ManagerContext {
 
 /**
  * Opens the Agent Manager ("Mission Control") view.
- * Returns the manager page/frame context for further operations.
+ * The Manager is accessed via the "Open Agent Manager" button (Ctrl+E) in main workbench.
+ * It opens in a separate jetski-agent window.
  */
 export async function openAgentManager(context: BrowserContext): Promise<ManagerContext> {
     console.log('🚀 Opening Agent Manager...');
 
-    // The Agent Manager is accessed via a menu or keyboard shortcut
-    // Looking for pages with manager-related URLs or titles
     const pages = context.pages();
 
-    // Try to find existing manager page
-    let managerPage = pages.find(p =>
-        p.url().includes('manager') ||
-        p.url().includes('mission-control')
+    // Find main workbench (not jetski-agent)
+    const workbenchPage = pages.find(p =>
+        p.url().includes('workbench.html') &&
+        !p.url().includes('jetski-agent')
     );
 
-    if (!managerPage) {
-        // Try to open via command palette or menu
-        // First, get the main workbench page
-        const workbenchPage = pages.find(p => p.url().includes('workbench.html'));
-
-        if (workbenchPage) {
-            // Try keyboard shortcut (Cmd/Ctrl + Shift + M is common for manager views)
-            await workbenchPage.keyboard.press('Control+Shift+M');
-            await workbenchPage.waitForTimeout(1000);
-
-            // Check for new pages
-            const newPages = context.pages();
-            managerPage = newPages.find(p =>
-                p.url().includes('manager') ||
-                p.url().includes('cascade-manager')
-            );
-        }
+    if (!workbenchPage) {
+        throw new Error('Main workbench page not found. Is Antigravity running?');
     }
 
-    if (!managerPage) {
-        throw new Error('Could not find or open Agent Manager. Make sure Antigravity is running with manager view available.');
+    // Try clicking the "Open Agent Manager" button
+    const openBtn = workbenchPage.locator('.open-agent-manager-button, button:has-text("Open Agent Manager")').first();
+
+    if (await openBtn.count() > 0 && await openBtn.isVisible()) {
+        console.log('✅ Found "Open Agent Manager" button, clicking...');
+        await openBtn.click();
+    } else {
+        // Fallback to keyboard shortcut
+        console.log('⌨️ Using Ctrl+E to open Agent Manager...');
+        await workbenchPage.keyboard.press('Control+e');
     }
 
-    // Find the manager frame
-    await managerPage.waitForLoadState('domcontentloaded');
-    const frames = managerPage.frames();
-    const managerFrame = frames.find(f =>
-        f.url().includes('manager') ||
-        f.url().includes('cascade-manager.html')
-    ) || managerPage.mainFrame();
+    await workbenchPage.waitForTimeout(1000);
+
+    // Find the jetski-agent page (Agent Manager window)
+    const updatedPages = context.pages();
+    let managerPage = updatedPages.find(p => p.url().includes('workbench-jetski-agent.html'));
+
+    if (!managerPage) {
+        throw new Error('Agent Manager window not found after opening.');
+    }
 
     console.log('✅ Agent Manager opened.');
 
-    return { page: managerPage, frame: managerFrame };
+    return { page: managerPage, frame: managerPage.mainFrame() };
 }
 
 /**
