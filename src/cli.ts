@@ -43,4 +43,47 @@ program.command('wait')
         }
     });
 
+const session = program.command('session')
+    .description('Manage conversation sessions');
+
+session.command('new')
+    .description('Start a new clean conversation')
+    .action(async () => {
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            await startNewConversation(frame);
+            await browser.close();
+        } catch (error) {
+            console.error('Error:', error);
+            process.exit(1);
+        }
+    });
+
+session.command('history')
+    .description('Get conversation history')
+    .option('--json', 'Output as JSON', false)
+    .action(async (options) => {
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const history = await getConversationHistory(frame);
+
+            if (options.json) {
+                console.log(JSON.stringify(history, null, 2));
+            } else {
+                history.messages.forEach(msg => {
+                    console.log(`\n[${msg.role.toUpperCase()}]`);
+                    console.log(msg.content);
+                    if (msg.thoughts) console.log(`(Thoughts: ${msg.thoughts})`);
+                });
+            }
+
+            await browser.close();
+        } catch (error) {
+            console.error('Error:', error);
+            process.exit(1);
+        }
+    });
+
 program.parse();
