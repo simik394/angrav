@@ -7,6 +7,7 @@ status: In Progress
 - [x] Create functionality specifications
 - [x] Implement Core Infrastructure (core.ts, cli.ts)
 - [x] Implement State Monitoring (state.ts)
+- [x] Implement CLI JSON Output (output.ts, --json flag)
 
 ## Features
 - [x] **Session Management**
