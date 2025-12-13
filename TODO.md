@@ -17,9 +17,9 @@ status: In Progress
 - [ ] **Context Injection**
   - [ ] Implement `addFileContext` (`@file`)
   - [ ] Implement image upload
-- [ ] **Output Extraction**
-  - [ ] Implement code block extraction
-  - [ ] Implement thought extraction
+- [x] **Output Extraction**
+  - [x] Implement code block extraction
+  - [x] Implement thought extraction
 - [ ] **Review & Execution**
   - [ ] Implement `applyCode` and `undo`
 - [ ] **Model Configuration**

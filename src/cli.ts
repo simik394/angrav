@@ -97,4 +97,69 @@ session.command('history')
         }
     });
 
+// Output extraction commands
+import { extractResponse, extractCodeBlocks, extractCodeBlocksByLanguage, AgentResponse, CodeBlock } from './extraction';
+
+const outputCmd = program.command('output')
+    .description('Extract agent output (code, thoughts, answers)');
+
+outputCmd.command('last')
+    .description('Get the last agent response')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const response = await extractResponse(frame);
+            await browser.close();
+
+            output<AgentResponse>(response, opts.json, (data) => {
+                if (data.thoughts) {
+                    console.log('\n=== Thoughts ===');
+                    console.log(data.thoughts);
+                }
+                console.log('\n=== Answer ===');
+                console.log(data.fullText);
+                if (data.codeBlocks.length > 0) {
+                    console.log(`\n=== Code Blocks (${data.codeBlocks.length}) ===`);
+                    data.codeBlocks.forEach((block, i) => {
+                        console.log(`\n[${i + 1}] ${block.language}${block.filename ? ` (${block.filename})` : ''}`);
+                        console.log(block.content.slice(0, 200) + (block.content.length > 200 ? '...' : ''));
+                    });
+                }
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+outputCmd.command('code')
+    .description('Extract code blocks')
+    .option('-l, --lang <language>', 'Filter by language')
+    .action(async (options: { lang?: string }) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+
+            const blocks = options.lang
+                ? await extractCodeBlocksByLanguage(frame, options.lang)
+                : await extractCodeBlocks(frame);
+            await browser.close();
+
+            output<CodeBlock[]>(blocks, opts.json, (data) => {
+                if (data.length === 0) {
+                    console.log('No code blocks found.');
+                    return;
+                }
+                data.forEach((block, i) => {
+                    console.log(`\n=== Block ${i + 1}: ${block.language} ===`);
+                    console.log(block.content);
+                });
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 program.parse();
