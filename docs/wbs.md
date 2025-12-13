@@ -10,6 +10,7 @@ graph TD
     SESS["Session Management ✅"]
     JSON["CLI JSON Output"]
     OUT["Output Extraction"]
+    AM["Agent Manager"]
     CTX["Context Injection"]
     CFG["Model Configuration"]
     REV["Review & Execution"]
@@ -17,7 +18,8 @@ graph TD
     SM -->|"má vyšší prioritu než"| SESS
     SESS -->|"má vyšší prioritu než"| JSON
     JSON -->|"má vyšší prioritu než"| OUT
-    OUT -->|"má vyšší prioritu než"| CTX
+    OUT -->|"má vyšší prioritu než"| AM
+    AM -->|"má vyšší prioritu než"| CTX
     CTX -->|"má vyšší prioritu než"| CFG
     CFG -->|"má vyšší prioritu než"| REV
 ```
@@ -29,7 +31,8 @@ graph TD
 | State Monitoring ✅ | má vyšší prioritu než | Session Management ✅ |
 | Session Management ✅ | má vyšší prioritu než | CLI JSON Output |
 | CLI JSON Output | má vyšší prioritu než | Output Extraction |
-| Output Extraction | má vyšší prioritu než | Context Injection |
+| Output Extraction | má vyšší prioritu než | Agent Manager |
+| Agent Manager | má vyšší prioritu než | Context Injection |
 | Context Injection | má vyšší prioritu než | Model Configuration |
 | Model Configuration | má vyšší prioritu než | Review & Execution |
 
@@ -38,9 +41,10 @@ graph TD
 2. **Session Management** (done) – Control conversation lifecycle
 3. **CLI JSON Output** – Required for AI agents to parse responses
 4. **Output Extraction** – AI needs to read agent's code/answers
-5. **Context Injection** – AI feeds files to agent
-6. **Model Configuration** – Optimize for task complexity
-7. **Review & Execution** – Advanced control, most complex selectors
+5. **Agent Manager** – Multi-agent orchestration ("Mission Control")
+6. **Context Injection** – AI feeds files to agent
+7. **Model Configuration** – Optimize for task complexity
+8. **Review & Execution** – Advanced control, most complex selectors
 
 ---
 
@@ -98,6 +102,29 @@ graph TD
 | 2.9 | Write tests | 30min | 1h | 2h | 3 | Playwright |
 | 2.10 | Update docs | 15min | 30min | 45min | 1 | Markdown |
 | **Total Phase 2** | **3h 25min** | **6h 50min** | **13h** | | |
+
+---
+
+### Phase 2.5: Agent Manager
+
+**Goal**: Interact with the Agent Manager ("Mission Control") window for multi-agent orchestration.
+
+| ID | Task | Min | Anticipated | Max | Complexity | Tools |
+|----|------|-----|-------------|-----|------------|-------|
+| 2.5.1 | Research Agent Manager window access | 30min | 1h | 2h | 3 | Browser DevTools, page.frames() |
+| 2.5.2 | Identify Agent Manager frame/window | 20min | 45min | 1.5h | 3 | Playwright (multiple windows) |
+| 2.5.3 | Implement `openAgentManager()` | 20min | 40min | 1h | 2 | Playwright |
+| 2.5.4 | Analyze task list structure | 30min | 1h | 2h | 3 | Browser DevTools, HTML dump |
+| 2.5.5 | Implement `listAgentTasks()` | 30min | 1h | 2h | 3 | Playwright |
+| 2.5.6 | Implement `getTaskStatus(taskId)` | 20min | 45min | 1.5h | 3 | Playwright |
+| 2.5.7 | Analyze approval UI elements | 20min | 45min | 1.5h | 3 | Browser DevTools |
+| 2.5.8 | Implement `approveTask(taskId)` | 20min | 45min | 1.5h | 3 | Playwright |
+| 2.5.9 | Implement `rejectTask(taskId)` | 15min | 30min | 1h | 2 | Playwright |
+| 2.5.10 | Implement `spawnAgent(workspace, task)` | 30min | 1h | 2h | 4 | Playwright |
+| 2.5.11 | Add CLI `manager` commands | 25min | 50min | 1.5h | 2 | commander.js |
+| 2.5.12 | Write tests | 30min | 1h | 2h | 3 | Playwright |
+| 2.5.13 | Update docs | 15min | 30min | 45min | 1 | Markdown |
+| **Total Phase 2.5** | **4h 45min** | **10h 30min** | **20h 15min** | | |
 
 ---
 
@@ -164,10 +191,11 @@ graph TD
 | 0 | Session Management ✅ | - | (done) | - | - |
 | 1 | CLI JSON Output | 1h 55min | 3h 50min | 5h 40min | 1.5 |
 | 2 | Output Extraction | 3h 25min | 6h 50min | 13h | 2.4 |
+| 2.5 | **Agent Manager** | 4h 45min | 10h 30min | 20h 15min | 2.8 |
 | 3 | Context Injection | 4h 25min | 8h 10min | 15h 45min | 2.9 |
 | 4 | Model Configuration | 2h 20min | 5h | 9h 30min | 2.4 |
 | 5 | Review & Execution | 4h 15min | 8h | 15h 15min | 3.3 |
-| **TOTAL** | | **16h 20min** | **31h 50min** | **59h 10min** | |
+| **TOTAL** | | **21h 05min** | **42h 20min** | **79h 25min** | |
 
 ---
 
