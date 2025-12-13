@@ -9,10 +9,10 @@ status: In Progress
 - [x] Implement State Monitoring (state.ts)
 
 ## Features
-- [ ] **Session Management**
-  - [ ] Implement `startNewConversation`
-  - [ ] Implement `getConversationHistory`
-  - [ ] Add CLI commands
+- [x] **Session Management**
+  - [x] Implement `startNewConversation`
+  - [x] Implement `getConversationHistory`
+  - [x] Add CLI commands
 - [ ] **Context Injection**
   - [ ] Implement `addFileContext` (`@file`)
   - [ ] Implement image upload
