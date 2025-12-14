@@ -8,13 +8,14 @@ export interface AppContext {
 
 /**
  * Connects to the running Antigravity Electron application via CDP.
- * Defaults to localhost:9222 which is the standard remote debugging port.
+ * Reads from BROWSER_CDP_ENDPOINT env var, or defaults to localhost:9222.
  */
-export async function connectToApp(cdpUrl: string = 'http://localhost:9222'): Promise<AppContext> {
-    console.log(`🚀 Connecting to Antigravity via ${cdpUrl}...`);
+export async function connectToApp(cdpUrl?: string): Promise<AppContext> {
+    const endpoint = cdpUrl || process.env.BROWSER_CDP_ENDPOINT || 'http://localhost:9222';
+    console.log(`🚀 Connecting to Antigravity via ${endpoint}...`);
 
     try {
-        const browser = await chromium.connectOverCDP(cdpUrl);
+        const browser = await chromium.connectOverCDP(endpoint);
         const contexts = browser.contexts();
 
         if (contexts.length === 0) {
