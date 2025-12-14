@@ -1,6 +1,6 @@
 # Context Injection Specification
 
-> **Status**: 📋 Planned  
+> **Status**: ✅ Implemented  
 > **Date**: 2025-12-14  
 > **Priority**: Phase 3 in WBS
 
@@ -22,15 +22,16 @@ Feed the Antigravity agent with file context, images, and documents programmatic
 
 ## 4. Technical Design
 
-### 4.1 Selectors (Unverified)
+### 4.1 Selectors (Verified)
 
 | Action | Selector | Status |
 |--------|----------|--------|
 | Chat Input | `[contenteditable="true"][data-lexical-editor="true"]` | ✅ Verified |
-| File Popup | TBD - appears after `@` typed | ⏳ Needs research |
-| Add Context Button | Plus icon button | ⏳ Needs research |
-| Images Option | Menu item "Images" | ⏳ Needs research |
-| Docs Option | Menu item "Docs" | ⏳ Needs research |
+| File Popup | `div.lexical-typeahead-menu[role="listbox"]` | ✅ Verified |
+| File Popup Item | `div.lexical-typeahead-menu [role="option"]` | ✅ Verified |
+| Add Context Button | TBD - needs further research | ⏳ Pending |
+| Images Option | TBD | ⏳ Pending |
+| Docs Option | TBD | ⏳ Pending |
 
 ### 4.2 File Reference Flow
 

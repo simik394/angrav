@@ -337,4 +337,86 @@ managerCmd.command('spawn')
         }
     });
 
+// Context injection commands
+import { addFileContext, addMultipleFileContexts, uploadImage, uploadDocument } from './context';
+
+const contextCmd = program.command('context')
+    .description('Inject context (files, images, documents)');
+
+contextCmd.command('add-file')
+    .description('Add a file reference to the prompt using @file syntax')
+    .argument('<filename>', 'Filename to reference (partial match)')
+    .action(async (filename: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            await addFileContext(frame, page, filename);
+            await browser.close();
+
+            output({ action: 'add_file', filename, success: true }, opts.json, () => {
+                console.log(`✅ File context added: ${filename}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+contextCmd.command('add-files')
+    .description('Add multiple file references')
+    .argument('<filenames...>', 'Filenames to reference')
+    .action(async (filenames: string[]) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            await addMultipleFileContexts(frame, page, filenames);
+            await browser.close();
+
+            output({ action: 'add_files', filenames, count: filenames.length, success: true }, opts.json, () => {
+                console.log(`✅ Added ${filenames.length} file contexts`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+contextCmd.command('add-image')
+    .description('Upload an image to the agent context')
+    .argument('<path>', 'Path to image file')
+    .action(async (path: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            await uploadImage(frame, page, path);
+            await browser.close();
+
+            output({ action: 'add_image', path, success: true }, opts.json, () => {
+                console.log(`✅ Image uploaded: ${path}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+contextCmd.command('add-doc')
+    .description('Upload a document to the agent context')
+    .argument('<path>', 'Path to document file')
+    .action(async (path: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            await uploadDocument(frame, page, path);
+            await browser.close();
+
+            output({ action: 'add_doc', path, success: true }, opts.json, () => {
+                console.log(`✅ Document uploaded: ${path}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 program.parse();
