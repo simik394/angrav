@@ -187,30 +187,74 @@ graph TD
 | **Total Phase 5** | **4h 15min** | **8h** | **15h 15min** | | |
 
 ---
+---
+
+### Phase 6: Multi-Session Monitoring
+
+**Goal**: Enable parallel orchestration of multiple Antigravity sessions.
+
+| ID | Task | Min | Anticipated | Max | Complexity | Tools |
+|----|------|-----|-------------|-----|------------|-------|
+| 6.1 | Create `src/registry.ts` with `SessionRegistry` class | 1h | 2h | 4h | 3 | TypeScript, EventEmitter |
+| 6.2 | Implement `discover()`, `get()`, `list()` | 30min | 1h | 2h | 3 | Playwright |
+| 6.3 | Implement polling with EventEmitter | 30min | 1h | 2h | 3 | TypeScript |
+| 6.4 | Create `src/multi-session.ts` | 30min | 1h | 2h | 2 | TypeScript |
+| 6.5 | Implement `waitForAny()` | 30min | 1h | 2h | 3 | TypeScript |
+| 6.6 | Implement `waitForAll()` | 30min | 1h | 2h | 3 | TypeScript |
+| 6.7 | Create `src/parallel.ts` | 30min | 1h | 2h | 2 | TypeScript |
+| 6.8 | Implement `executeParallel()`, `fanOut()` | 45min | 1.5h | 3h | 3 | TypeScript |
+| 6.9 | Add `sessions` CLI commands | 30min | 1h | 2h | 2 | commander.js |
+| 6.10 | Write integration tests | 1h | 2h | 4h | 3 | Playwright |
+| 6.11 | Update docs | 15min | 30min | 1h | 1 | Markdown |
+| **Total Phase 6** | **7h** | **13h** | **26h** | | |
+
+---
+
+### Phase 7: Langfuse Telemetry (Mid-Low Priority)
+
+**Goal**: Add observability and tracing to agent operations.
+
+| ID | Task | Min | Anticipated | Max | Complexity | Tools |
+|----|------|-----|-------------|-----|------------|-------|
+| 7.1 | Add `langfuse` dependency | 10min | 20min | 30min | 1 | npm |
+| 7.2 | Create `src/telemetry.ts` with `AgentTelemetry` class | 1h | 2h | 4h | 3 | TypeScript, Langfuse SDK |
+| 7.3 | Add environment variable handling | 20min | 40min | 1h | 2 | TypeScript |
+| 7.4 | Wrap session operations with traces | 45min | 1.5h | 3h | 3 | TypeScript |
+| 7.5 | Add spans for prompt submission | 30min | 1h | 2h | 3 | TypeScript |
+| 7.6 | Add spans for response extraction | 30min | 1h | 2h | 3 | TypeScript |
+| 7.7 | Capture errors as events | 20min | 40min | 1.5h | 2 | TypeScript |
+| 7.8 | Add telemetry CLI config commands | 30min | 1h | 2h | 2 | commander.js |
+| 7.9 | Add `--no-telemetry` flag | 15min | 30min | 1h | 1 | commander.js |
+| 7.10 | Update docs with telemetry setup | 30min | 1h | 2h | 1 | Markdown |
+| **Total Phase 7** | **4h 50min** | **9h 30min** | **19h** | | |
+
+---
 
 ## Summary
 
-| Phase | Feature | Min | Anticipated | Max | Avg Complexity |
-|-------|---------|-----|-------------|-----|----------------|
-| 0 | State Monitoring ✅ | - | (done) | - | - |
-| 0 | Session Management ✅ | - | (done) | - | - |
-| 1 | CLI JSON Output | 1h 55min | 3h 50min | 5h 40min | 1.5 |
-| 2 | Output Extraction | 3h 25min | 6h 50min | 13h | 2.4 |
-| 2.5 | **Agent Manager** | 4h 45min | 10h 30min | 20h 15min | 2.8 |
-| 3 | Context Injection | 4h 25min | 8h 10min | 15h 45min | 2.9 |
-| 4 | Model Configuration | 2h 20min | 5h | 9h 30min | 2.4 |
-| 5 | Review & Execution | 4h 15min | 8h | 15h 15min | 3.3 |
-| **TOTAL** | | **21h 05min** | **42h 20min** | **79h 25min** | |
+| Phase | Feature | Min | Anticipated | Max | Status |
+|-------|---------|-----|-------------|-----|--------|
+| 0 | State Monitoring | - | (done) | - | ✅ |
+| 0 | Session Management | - | (done) | - | ✅ |
+| 1 | CLI JSON Output | 1h 55min | 3h 50min | 5h 40min | ✅ |
+| 2 | Output Extraction | 3h 25min | 6h 50min | 13h | ✅ |
+| 2.5 | Agent Manager | 4h 45min | 10h 30min | 20h 15min | ✅ |
+| 3 | Context Injection | 4h 25min | 8h 10min | 15h 45min | 📋 |
+| 4 | Model Configuration | 2h 20min | 5h | 9h 30min | 📋 |
+| 5 | Review & Execution | 4h 15min | 8h | 15h 15min | 📋 |
+| 6 | Multi-Session Monitoring | 7h | 13h | 26h | 📋 |
+| 7 | Langfuse Telemetry | 4h 50min | 9h 30min | 19h | 📋 |
 
 ---
 
 ## Recommended Execution Order
 
 ```
-Week 1: Phase 1 (JSON) + Phase 2 (Output)     → ~10h
-Week 2: Phase 3 (Context) + Phase 4 (Config)  → ~13h
-Week 3: Phase 5 (Review/Execution)            → ~8h
-        + MCP Server wrap (optional)          → +6h
+Completed:   Phase 0-2.5 (Core infrastructure)
+Next:        Phase 3 (Context) + Phase 4 (Config)  → ~13h
+Then:        Phase 5 (Review/Execution)            → ~8h
+Parallel:    Phase 6 (Multi-Session)               → ~13h
+Optional:    Phase 7 (Langfuse)                    → ~10h
 ```
 
 ---
@@ -225,3 +269,5 @@ Week 3: Phase 5 (Review/Execution)            → ~8h
 | **Browser DevTools** | DOM analysis, selector discovery |
 | **HTML dump scripts** | Offline DOM inspection |
 | **Markdown** | Documentation |
+| **Langfuse SDK** | Telemetry (Phase 7) |
+

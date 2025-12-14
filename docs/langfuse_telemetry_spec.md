@@ -114,28 +114,5 @@ angrav config get telemetry
 
 ---
 
-# Work Breakdown Structure
+> 📋 **Work Breakdown**: See [[wbs|wbs.md]] - Langfuse Telemetry (Mid-Low Priority)
 
-## Phase 1: Setup
-
-- [ ] Add `langfuse` dependency
-- [ ] Create `src/telemetry.ts` with `AgentTelemetry` class
-- [ ] Add environment variable handling
-
-## Phase 2: Core Instrumentation
-
-- [ ] Wrap session operations with traces
-- [ ] Add spans for prompt submission
-- [ ] Add spans for response extraction
-- [ ] Capture errors as events
-
-## Phase 3: CLI Integration
-
-- [ ] Add telemetry config commands
-- [ ] Add `--no-telemetry` flag for individual commands
-
-## Phase 4: Documentation
-
-- [ ] Update README with telemetry setup
-- [ ] Document self-hosted configuration
-- [ ] Add privacy/opt-out instructions

@@ -736,39 +736,7 @@ await fanOut(registry, 'Generate JSDoc for all exported functions');
 
 ---
 
-## 11. Work Breakdown Structure
-
-### Phase 1: Core Registry (3-4h)
-- [ ] Create `src/registry.ts` with `SessionRegistry` class
-- [ ] Implement `discover()`, `get()`, `list()`
-- [ ] Implement polling with EventEmitter
-- [ ] Write unit tests
-
-### Phase 2: Multi-Wait Operations (2-3h)
-- [ ] Create `src/multi-session.ts`
-- [ ] Implement `waitForAny()`
-- [ ] Implement `waitForAll()`
-- [ ] Implement `waitForSession()`
-- [ ] Write integration tests
-
-### Phase 3: Parallel Execution (2-3h)
-- [ ] Create `src/parallel.ts`
-- [ ] Implement `executeParallel()`
-- [ ] Implement `fanOut()`
-- [ ] Write tests with mock sessions
-
-### Phase 4: CLI Integration (2h)
-- [ ] Add global `--session` flag
-- [ ] Add `sessions list` command
-- [ ] Add `sessions wait` command
-- [ ] Add `--json` output for all
-
-### Phase 5: Documentation & Testing (1-2h)
-- [ ] Update README with multi-session examples
-- [ ] Add to wbs.md
-- [ ] Manual testing with real Antigravity instances
-
-**Total Estimated: 10-14 hours**
+> 📋 **Work Breakdown**: See [[wbs|wbs.md]] - Multi-Session Monitoring
 
 ---
 
