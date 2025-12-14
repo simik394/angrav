@@ -67,7 +67,6 @@ EXPOSE 9222 9223 5900
 
 VOLUME ["/workspace", "/home/angrav/.config/Antigravity"]
 
-USER angrav
 WORKDIR /workspace
 
 CMD ["/start-browser.sh"]
