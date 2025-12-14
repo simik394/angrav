@@ -10,16 +10,29 @@ export interface FileContext {
     type: 'file' | 'image' | 'document';
 }
 
+// Context types available via @ menu
+export type ContextType =
+    | 'code-context-items'
+    | 'files'
+    | 'directories'
+    | 'mcp-servers'
+    | 'rules'
+    | 'conversations'
+    | 'terminal';
+
 // Known selectors (discovered via exploration tests)
 const SELECTORS = {
     chatInput: '[contenteditable="true"][data-lexical-editor="true"]',
-    // Popup that appears after typing @
-    filePopup: 'div.lexical-typeahead-menu[role="listbox"]',
-    filePopupItem: 'div.lexical-typeahead-menu [role="option"]',
-    // TBD - needs further DOM discovery
-    addContextButton: 'button[aria-label*="context"], button[aria-label*="Add"]',
-    imageOption: '[data-option="image"], [aria-label*="image"]',
-    documentOption: '[data-option="document"], [aria-label*="document"]',
+    // Popup that appears after typing @ (in iframe)
+    atPopup: 'div.lexical-typeahead-menu[role="listbox"]',
+    atPopupItem: '[role="option"]',
+    // + button to open context menu
+    addContextButton: 'button:has(svg.lucide-plus)',
+    // Context dialog that appears after clicking +
+    addContextDialog: '[role="dialog"]',
+    // Menu items in the dialog (match by text content)
+    imageMenuItem: 'text=Images',
+    docsMenuItem: 'text=Docs',
 };
 
 /**
@@ -89,6 +102,52 @@ export async function addMultipleFileContexts(
 }
 
 /**
+ * Adds a context reference by type using the @ menu.
+ * Types "@" followed by the type prefix and selects from the popup.
+ * 
+ * @param frame - The agent frame
+ * @param page - The page containing the frame
+ * @param contextType - Type of context to add (files, directories, terminal, etc)
+ * @param name - Name/filter for the context item
+ */
+export async function addContextByType(
+    frame: Frame,
+    page: Page,
+    contextType: ContextType,
+    name: string
+): Promise<void> {
+    // Map context types to their @ prefixes
+    const prefixMap: Record<ContextType, string> = {
+        'code-context-items': 'code',
+        'files': 'file',
+        'directories': 'dir',
+        'mcp-servers': 'mcp',
+        'rules': 'rule',
+        'conversations': 'conv',
+        'terminal': 'term'
+    };
+
+    const prefix = prefixMap[contextType];
+    console.log(`📂 Adding ${contextType} context: ${name}`);
+
+    const input = frame.locator(SELECTORS.chatInput).first();
+    await input.click();
+
+    // Type @ + prefix to filter to this type
+    await page.keyboard.type(`@${prefix}`);
+    await frame.waitForTimeout(500);
+
+    // Type the specific name
+    await page.keyboard.type(name);
+    await frame.waitForTimeout(300);
+
+    // Select first match
+    await page.keyboard.press('Enter');
+
+    console.log(`✅ ${contextType} context added: ${name}`);
+}
+
+/**
  * Uploads an image to the agent context.
  * Uses the Add Context button -> Images option.
  * 
@@ -111,8 +170,8 @@ export async function uploadImage(
     // Wait for menu
     await frame.waitForTimeout(300);
 
-    // Select Images option
-    const imageOption = frame.locator(SELECTORS.imageOption);
+    // Select Images option from dialog
+    const imageOption = frame.locator(SELECTORS.imageMenuItem);
     await imageOption.click();
 
     // Handle file input (Playwright can set files directly)
@@ -143,8 +202,8 @@ export async function uploadDocument(
     // Wait for menu
     await frame.waitForTimeout(300);
 
-    // Select Docs option
-    const docsOption = frame.locator(SELECTORS.documentOption);
+    // Select Docs option from dialog
+    const docsOption = frame.locator(SELECTORS.docsMenuItem);
     await docsOption.click();
 
     // Handle file input
