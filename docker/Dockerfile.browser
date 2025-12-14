@@ -34,21 +34,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Windsurf
-RUN curl -fsSL https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg | gpg --dearmor -o /usr/share/keyrings/windsurf-archive-keyring.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/windsurf-archive-keyring.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" > /etc/apt/sources.list.d/windsurf.list \
+# Install Antigravity (Google's VS Codium fork)
+# Note: GPG key is bundled since remote URL is not publicly accessible
+COPY docker/antigravity-repo-key.gpg /etc/apt/keyrings/antigravity-repo-key.gpg
+RUN echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.gpg] https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/ antigravity-debian main" \
+    > /etc/apt/sources.list.d/antigravity.list \
     && apt-get update \
-    && apt-get install -y windsurf \
+    && apt-get install -y antigravity \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd -m -s /bin/bash angrav \
-    && mkdir -p /home/angrav/.config/Windsurf \
+    && mkdir -p /home/angrav/.config/Antigravity \
     && mkdir -p /workspace \
     && chown -R angrav:angrav /home/angrav /workspace
 
 # Fix chrome-sandbox permissions
-RUN chmod 4755 /usr/share/windsurf/chrome-sandbox 2>/dev/null || true
+RUN chmod 4755 /usr/share/antigravity/chrome-sandbox 2>/dev/null || true
 
 # Supervisord config
 COPY docker/supervisord-browser.conf /etc/supervisor/conf.d/supervisord.conf
@@ -63,7 +65,7 @@ RUN chmod +x /start-browser.sh
 # 5900 = VNC
 EXPOSE 9222 9223 5900
 
-VOLUME ["/workspace", "/home/angrav/.config/Windsurf"]
+VOLUME ["/workspace", "/home/angrav/.config/Antigravity"]
 
 USER angrav
 WORKDIR /workspace

@@ -22,7 +22,7 @@ services:
       - ./workspace:/workspace
 
       # Persistent auth/settings (survives container restart)
-      - angrav-config:/home/angrav/.config/Windsurf
+      - angrav-config:/home/angrav/.config/Antigravity
 
     environment:
       - TZ=Europe/Prague
