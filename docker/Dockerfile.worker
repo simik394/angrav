@@ -31,7 +31,7 @@ ENV BROWSER_CDP_ENDPOINT=http://angrav-browser:9223
 VOLUME ["/workspace"]
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
-    CMD node -e "fetch(process.env.BROWSER_CDP_ENDPOINT + '/json/version').then(r => r.ok ? process.exit(0) : process.exit(1))" || exit 1
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+    CMD node -e 'const dns=require("dns/promises"); async function check(){ try { const url=new URL(process.env.BROWSER_CDP_ENDPOINT||"http://localhost:9222"); if(url.hostname!=="localhost"&&url.hostname!=="127.0.0.1"){ const {address}=await dns.lookup(url.hostname); url.hostname=address; } const r=await fetch(new URL("/json/version", url)); process.exit(r.ok?0:1); } catch(e){ console.error(e); process.exit(1); } } check();'" || exit 1
 
 CMD ["npx", "ts-node", "worker.ts"]

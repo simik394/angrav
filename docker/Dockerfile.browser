@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fluxbox \
     dbus-x11 \
     socat \
+    chromium \
     ca-certificates \
     libx11-xcb1 \
     libxcb-dri3-0 \

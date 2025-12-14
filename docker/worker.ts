@@ -66,7 +66,24 @@ async function processTask(taskPath: string): Promise<void> {
         }
 
         // Connect to Antigravity via CDP (uses env var in Docker)
-        const cdpEndpoint = process.env.BROWSER_CDP_ENDPOINT || 'http://localhost:9222';
+        // Connect to Antigravity via CDP (uses env var in Docker)
+        let cdpEndpoint = process.env.BROWSER_CDP_ENDPOINT || 'http://localhost:9222';
+
+        // Resolve hostname to IP to bypass Host header check if not localhost
+        try {
+            const url = new URL(cdpEndpoint);
+            if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+                // Dynamic import of dns/promises to avoid top-level node types issues if not present
+                const dns = require('node:dns').promises;
+                const { address } = await dns.lookup(url.hostname);
+                url.hostname = address;
+                cdpEndpoint = url.origin;
+                console.log(`  🔍 Resolved CDP endpoint host to ${address}`);
+            }
+        } catch (e) {
+            console.warn('  ⚠️ Failed to resolve CDP hostname, trying original:', e);
+        }
+
         console.log(`  🔌 Connecting to Antigravity at ${cdpEndpoint}...`);
         const { browser, context, page } = await connectToApp(cdpEndpoint);
 
