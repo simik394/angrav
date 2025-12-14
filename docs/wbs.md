@@ -36,7 +36,7 @@ graph TD
 | Output Extraction | ✅ Done | `src/extraction.ts` |
 | Agent Manager | ✅ Done | `src/manager.ts` |
 | Multi-Session Monitoring | 📋 Planned | `multi_session_monitoring_spec.md` |
-| Context Injection | 📋 Planned | Phase 3 |
+| Context Injection | ✅ Done | `src/context.ts` |
 | Model Configuration | 📋 Planned | Phase 4 |
 | Review & Execution | 📋 Planned | Phase 5 |
 
