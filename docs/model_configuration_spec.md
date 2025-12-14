@@ -1,11 +1,12 @@
 # Model Configuration Specification
 
-> **Status**: Draft  
-> **Date**: 2025-12-13
+> **Status**: 📋 Planned  
+> **Date**: 2025-12-14  
+> **Priority**: Phase 4 in WBS
 
 ## 1. Overview
 
-Configure the intelligent agent's parameters: Model selection (e.g., Claude, GPT) and Conversation Mode (Planning vs Fast).
+Configure the intelligent agent's parameters: Model selection and Conversation Mode (Planning vs Fast).
 
 ## 2. Problem Statement
 
@@ -21,16 +22,16 @@ Configure the intelligent agent's parameters: Model selection (e.g., Claude, GPT
 
 ## 4. Technical Design
 
-### 4.1 Selectors
+### 4.1 Selectors (Unverified)
 
-| Setting | Selector | Notes |
-|---------|----------|-------|
-| Model Dropdown | `.model-selector-trigger` | Opens model list |
-| Model Option | `[role="option"]` | Individual model item |
-| Mode Dropdown | `.mode-selector-trigger` | Left of model selector |
-| Mode Option | "Planning", "Fast", "Chat" | Menu items |
+| Setting | Selector | Status |
+|---------|----------|--------|
+| Model Dropdown | `.model-selector-trigger` | ⏳ Needs research |
+| Model Option | `[role="option"]` | ⏳ Needs research |
+| Mode Dropdown | `.mode-selector-trigger` | ⏳ Needs research |
+| Mode Options | "Planning", "Fast", "Chat" | ⏳ Needs research |
 
-### 4.2 Data Model
+### 4.2 Proposed Data Model
 
 ```typescript
 type AgentModel = 'claude-3-opus' | 'claude-3-sonnet' | 'gpt-4o';
@@ -42,7 +43,7 @@ interface AgentConfig {
 }
 ```
 
-## 5. Operations
+## 5. Proposed Operations
 
 ### 5.1 setModel(modelName)
 
@@ -62,41 +63,33 @@ async function setMode(frame: Frame, mode: ConversationMode): Promise<void> {
 }
 ```
 
-## 6. CLI Commands
+### 5.3 getConfig()
 
-```bash
-# Set config
-angrav config --model claude-3-opus
-angrav config --mode planning
-
-# Get config
-angrav config show
+```typescript
+async function getConfig(frame: Frame): Promise<AgentConfig> {
+    // Read current model and mode from UI
+}
 ```
 
-## 7. Integration Points
+## 6. Proposed CLI Commands
 
-| Existing Code | Hook |
-|--------------|------|
-| `session_management` | Set config when starting new session |
+```bash
+angrav config --model claude-3-opus
+angrav config --mode planning
+angrav config show
+angrav config show --json
+```
 
----
+## 7. Work Breakdown
 
-# Work Breakdown Structure
+| Task | Est. Time | Complexity |
+|------|-----------|------------|
+| Analyze model dropdown selectors | 45min | 3 |
+| Implement `setModel()` | 45min | 3 |
+| Analyze mode dropdown selectors | 30min | 2 |
+| Implement `setMode()` | 45min | 3 |
+| Implement `getConfig()` | 30min | 2 |
+| CLI integration | 40min | 2 |
+| Testing | 45min | 2 |
 
-## Phase 1: Configuration Logic
-
-- [ ] Create `src/config.ts`
-  - [ ] Implement `setModel()`
-  - [ ] Implement `setMode()`
-  - [ ] Implement `getConfig()`
-
-## Phase 2: CLI Integration
-
-- [ ] Add config commands to CLI
-  - [ ] `angrav config`
-
-## Phase 3: Testing
-
-- [ ] Write tests in `tests/config.test.ts`
-- [ ] Verify model switching persists
-- [ ] Verify mode switching
+**Total: ~5h anticipated**

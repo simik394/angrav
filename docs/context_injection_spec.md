@@ -1,7 +1,8 @@
 # Context Injection Specification
 
-> **Status**: Draft  
-> **Date**: 2025-12-13
+> **Status**: 📋 Planned  
+> **Date**: 2025-12-14  
+> **Priority**: Phase 3 in WBS
 
 ## 1. Overview
 
@@ -21,15 +22,15 @@ Feed the Antigravity agent with file context, images, and documents programmatic
 
 ## 4. Technical Design
 
-### 4.1 Selectors
+### 4.1 Selectors (Unverified)
 
-| Action | Selector | Notes |
-|--------|----------|-------|
-| Chat Input | `[contenteditable="true"][data-lexical-editor="true"]` | Main input field |
-| File Popup | TBD - appears after `@` typed | File selection dropdown |
-| Add Context Button | Plus icon button | Opens context menu |
-| Images Option | Menu item "Images" | In context menu |
-| Docs Option | Menu item "Docs" | In context menu |
+| Action | Selector | Status |
+|--------|----------|--------|
+| Chat Input | `[contenteditable="true"][data-lexical-editor="true"]` | ✅ Verified |
+| File Popup | TBD - appears after `@` typed | ⏳ Needs research |
+| Add Context Button | Plus icon button | ⏳ Needs research |
+| Images Option | Menu item "Images" | ⏳ Needs research |
+| Docs Option | Menu item "Docs" | ⏳ Needs research |
 
 ### 4.2 File Reference Flow
 
@@ -41,22 +42,16 @@ Feed the Antigravity agent with file context, images, and documents programmatic
 5. File reference appears as chip in input
 ```
 
-### 4.3 Data Model
+### 4.3 Proposed Data Model
 
 ```typescript
 interface FileContext {
     path: string;
     type: 'file' | 'image' | 'document';
 }
-
-interface ContextInjectionOptions {
-    files?: string[];
-    images?: string[];
-    documents?: string[];
-}
 ```
 
-## 5. Operations
+## 5. Proposed Operations
 
 ### 5.1 addFileContext()
 
@@ -82,55 +77,26 @@ async function uploadImage(frame: Frame, imagePath: string): Promise<void> {
 }
 ```
 
-## 6. CLI Commands
+## 6. Proposed CLI Commands
 
 ```bash
-# Add file context
 angrav context add-file path/to/file.ts
-
-# Add multiple files
 angrav context add-files file1.ts file2.ts
-
-# Upload image
 angrav context add-image screenshot.png
-
-# Upload document
 angrav context add-doc spec.pdf
 ```
 
-## 7. Integration Points
+## 7. Work Breakdown
 
-| Existing Code | Hook |
-|--------------|------|
-| `submit-prompt.spec.ts` | Add context before sending prompt |
-| New automation scripts | Bulk file injection |
+| Task | Est. Time | Complexity |
+|------|-----------|------------|
+| Analyze popup structure | 1h | 3 |
+| Implement `addFileContext()` | 1.5h | 4 |
+| Handle popup selection | 1h | 4 |
+| Identify Add Context button | 30min | 2 |
+| Implement `uploadImage()` | 1h | 3 |
+| Implement `uploadDocument()` | 1h | 3 |
+| CLI integration | 40min | 2 |
+| Testing | 1h | 3 |
 
----
-
-# Work Breakdown Structure
-
-## Phase 1: File Context (@file)
-
-- [ ] Analyze popup structure (dump HTML after typing @)
-- [ ] Create `src/context.ts`
-  - [ ] Implement `addFileContext()`
-  - [ ] Handle popup selection
-
-## Phase 2: Image/Document Upload
-
-- [ ] Identify Add Context button selector
-- [ ] Implement `uploadImage()`
-- [ ] Implement `uploadDocument()`
-- [ ] Handle file picker dialogs
-
-## Phase 3: CLI Integration
-
-- [ ] Add context commands to CLI
-  - [ ] `angrav context add-file`
-  - [ ] `angrav context add-image`
-
-## Phase 4: Testing
-
-- [ ] Write tests in `tests/context.test.ts`
-- [ ] Verify file reference appears in input
-- [ ] Verify image upload success
+**Total: ~8h anticipated**

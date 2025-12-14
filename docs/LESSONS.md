@@ -40,9 +40,3 @@
 ### 7. Interacting with Collapsible Elements
 - **Issue:** Agent "Thoughts" are hidden in a collapsible section.
 - **Solution:** Check for the existence of the toggle button (`button:has-text("Thought")`), click it, and wait for the content (`.prose`) to become visible before reading.
-### 8. State Monitoring
-- **Issue:** Input field (`[contenteditable="true"]`) becomes `disabled` or `read-only` during agent generation, but standard `toBeDisabled()` checks might be flaky if it toggles quickly.
-- **Solution:** Combine checking for the "Stop Generating" button visibility (primary indicator of activity) with input editability.
-
-### 9. Input Field Attributes
-- **Observation:** The main chat input in Antigravity has attributes `contenteditable="true"` AND `data-lexical-editor="true"`. Using both makes the selector more robust against other inputs.

@@ -8,43 +8,48 @@
 graph TD
     SM["State Monitoring ✅"]
     SESS["Session Management ✅"]
-    JSON["CLI JSON Output"]
-    OUT["Output Extraction"]
-    AM["Agent Manager"]
+    JSON["CLI JSON Output ✅"]
+    OUT["Output Extraction ✅"]
+    AM["Agent Manager ✅"]
+    MULTI["Multi-Session Monitoring"]
     CTX["Context Injection"]
     CFG["Model Configuration"]
     REV["Review & Execution"]
 
-    SM -->|"má vyšší prioritu než"| SESS
-    SESS -->|"má vyšší prioritu než"| JSON
-    JSON -->|"má vyšší prioritu než"| OUT
-    OUT -->|"má vyšší prioritu než"| AM
-    AM -->|"má vyšší prioritu než"| CTX
-    CTX -->|"má vyšší prioritu než"| CFG
-    CFG -->|"má vyšší prioritu než"| REV
+    SM -->|"higher priority"| SESS
+    SESS -->|"higher priority"| JSON
+    JSON -->|"higher priority"| OUT
+    OUT -->|"higher priority"| AM
+    AM -->|"higher priority"| MULTI
+    MULTI -->|"higher priority"| CTX
+    CTX -->|"higher priority"| CFG
+    CFG -->|"higher priority"| REV
 ```
 
 ### Priority Relations Table
 
-| Feature A | Relation | Feature B |
-|-----------|----------|-----------|
-| State Monitoring ✅ | má vyšší prioritu než | Session Management ✅ |
-| Session Management ✅ | má vyšší prioritu než | CLI JSON Output |
-| CLI JSON Output | má vyšší prioritu než | Output Extraction |
-| Output Extraction | má vyšší prioritu než | Agent Manager |
-| Agent Manager | má vyšší prioritu než | Context Injection |
-| Context Injection | má vyšší prioritu než | Model Configuration |
-| Model Configuration | má vyšší prioritu než | Review & Execution |
+| Feature | Status | Notes |
+|---------|--------|-------|
+| State Monitoring | ✅ Done | `src/state.ts` |
+| Session Management | ✅ Done | `src/session.ts` |
+| CLI JSON Output | ✅ Done | `--json` flag in `src/cli.ts` |
+| Output Extraction | ✅ Done | `src/extraction.ts` |
+| Agent Manager | ✅ Done | `src/manager.ts` |
+| Multi-Session Monitoring | 📋 Planned | `multi_session_monitoring_spec.md` |
+| Context Injection | 📋 Planned | Phase 3 |
+| Model Configuration | 📋 Planned | Phase 4 |
+| Review & Execution | 📋 Planned | Phase 5 |
 
 ### Rationale
 1. **State Monitoring** (done) – Foundation for all interactions
 2. **Session Management** (done) – Control conversation lifecycle
-3. **CLI JSON Output** – Required for AI agents to parse responses
-4. **Output Extraction** – AI needs to read agent's code/answers
-5. **Agent Manager** – Multi-agent orchestration ("Mission Control")
-6. **Context Injection** – AI feeds files to agent
-7. **Model Configuration** – Optimize for task complexity
-8. **Review & Execution** – Advanced control, most complex selectors
+3. **CLI JSON Output** (done) – Required for AI agents to parse responses
+4. **Output Extraction** (done) – AI needs to read agent's code/answers
+5. **Agent Manager** (done) – Multi-agent orchestration ("Mission Control")
+6. **Multi-Session Monitoring** (new) – Parallel session orchestration
+7. **Context Injection** – AI feeds files to agent
+8. **Model Configuration** – Optimize for task complexity
+9. **Review & Execution** – Advanced control, most complex selectors
 
 ---
 

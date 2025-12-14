@@ -1,7 +1,8 @@
 # Review & Execution Specification
 
-> **Status**: Draft  
-> **Date**: 2025-12-13
+> **Status**: 📋 Planned  
+> **Date**: 2025-12-14  
+> **Priority**: Phase 5 in WBS (Most Complex)
 
 ## 1. Overview
 
@@ -21,26 +22,26 @@ Control the agent's actions by applying code changes, rejecting bad logic, and v
 
 ## 4. Technical Design
 
-### 4.1 Selectors
+### 4.1 Selectors (Unverified)
 
-| Action | Selector | Notes |
-|--------|----------|-------|
-| Apply Code | `button:has-text("Apply")` | Often on code block header |
-| Save File | `button:has-text("Save")` | Alternative to Apply |
-| Undo | `[data-lucide="undo2"]` | Revert last action |
-| Terminal | `.xterm-screen` | Canvas/DOM for terminal |
-| Terminal Text | `.xterm-helper-textarea` | Hidden textarea for input/output |
+| Action | Selector | Status |
+|--------|----------|--------|
+| Apply Code | `button:has-text("Apply")` | ⏳ Needs research |
+| Save File | `button:has-text("Save")` | ⏳ Needs research |
+| Undo | `[data-lucide="undo2"]` | ⏳ Needs research |
+| Terminal | `.xterm-screen` | ⏳ Needs research |
+| Terminal Accessibility | `.xterm-accessibility` | ⏳ Needs research |
 
-### 4.2 Data Model
+### 4.2 Proposed Data Model
 
 ```typescript
 interface TerminalState {
     lastOutput: string;
-    exitCode?: number; // Inferred from prompt
+    exitCode?: number;
 }
 ```
 
-## 5. Operations
+## 5. Proposed Operations
 
 ### 5.1 applyCodeChanges()
 
@@ -64,54 +65,42 @@ async function undoLastAction(frame: Frame): Promise<void> {
 
 ```typescript
 async function readTerminal(page: Page): Promise<string> {
-    // Xterm canvas reading is hard, might need clipboard hack
-    // or accessibility tree
+    // Xterm canvas reading requires accessibility tree
+    // or clipboard hack
     return await page.locator('.xterm-accessibility').innerText();
 }
 ```
 
-## 6. CLI Commands
+## 6. Proposed CLI Commands
 
 ```bash
-# Apply all changes
-angrav apply
+angrav apply              # Apply all pending changes
+angrav apply --file *.ts  # Apply to specific files
 
-# Undo
-angrav undo
+angrav undo               # Undo last action
 
-# Read terminal
-angrav terminal read
+angrav terminal read      # Read terminal output
+angrav terminal read --json
 ```
 
-## 7. Integration Points
+## 7. Challenges
 
-| Existing Code | Hook |
-|--------------|------|
-| `submit-prompt.spec.ts` | Verify terminal after command execution |
+| Challenge | Notes |
+|-----------|-------|
+| Xterm Canvas | Terminal renders to canvas, text extraction is hard |
+| Apply Button Scope | Buttons are per-code-block, need to target correctly |
+| Undo Scope | May affect multiple files |
 
----
+## 8. Work Breakdown
 
-# Work Breakdown Structure
+| Task | Est. Time | Complexity |
+|------|-----------|------------|
+| Analyze code block action buttons | 1h | 4 |
+| Implement `applyCodeChanges()` | 1.5h | 4 |
+| Implement `undoLastAction()` | 45min | 3 |
+| Research xterm reading strategy | 1h | 4 |
+| Implement `readTerminal()` | 1.5h | 5 |
+| CLI integration | 45min | 2 |
+| Testing | 1h | 3 |
 
-## Phase 1: Action Control
-
-- [ ] Create `src/execution.ts`
-  - [ ] Implement `applyCodeChanges()`
-  - [ ] Implement `undoLastAction()`
-
-## Phase 2: Terminal Verification
-
-- [ ] Research robust Xterm reading strategy
-- [ ] Implement `readTerminal()`
-
-## Phase 3: CLI Integration
-
-- [ ] Add execution commands
-  - [ ] `angrav apply`
-  - [ ] `angrav undo`
-
-## Phase 4: Testing
-
-- [ ] Write tests in `tests/execution.test.ts`
-- [ ] Verify code application
-- [ ] Verify undo functionality
+**Total: ~8h anticipated**
