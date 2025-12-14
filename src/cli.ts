@@ -419,4 +419,55 @@ contextCmd.command('add-doc')
         }
     });
 
+// Terminal management commands
+import { listTerminals, addTerminal, TerminalInfo } from './terminal';
+
+const terminalCmd = program.command('terminal')
+    .description('Manage terminal context (supports interactive TUI selection)');
+
+terminalCmd.command('list')
+    .description('List all available terminals')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const terminals = await listTerminals(frame, page);
+            await browser.close();
+
+            output<TerminalInfo[]>(terminals, opts.json, (data) => {
+                if (data.length === 0) {
+                    console.log('No terminals available.');
+                    return;
+                }
+                console.log('\n=== Available Terminals ===\n');
+                data.forEach(t => {
+                    console.log(`  ${t.index}. ${t.name}`);
+                });
+                console.log('\nUse `angrav terminal add <index|name>` to add as context.');
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+terminalCmd.command('add')
+    .description('Add terminal as context (interactive if no argument)')
+    .argument('[selector]', 'Terminal index (1-based) or name (partial match)')
+    .action(async (selector?: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const name = await addTerminal(frame, page, selector);
+            await browser.close();
+
+            output({ action: 'add_terminal', terminal: name, success: true }, opts.json, () => {
+                console.log(`✅ Terminal added: ${name}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 program.parse();
