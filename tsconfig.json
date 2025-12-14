@@ -1,0 +1,1 @@
+{"compilerOptions":{"module":"commonjs","target":"ES2020","strict":true,"esModuleInterop":true,"noEmit":true,"skipLibCheck":true},"include":["src/**/*"]}
