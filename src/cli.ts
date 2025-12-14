@@ -246,7 +246,7 @@ outputCmd.command('code')
     });
 
 // Agent Manager commands
-import { openAgentManager, listAgentTasks, approveTask, rejectTask, spawnAgent, AgentTask } from './manager';
+import { listAgentTasks, approveTask, rejectTask, spawnAgent, AgentTask } from './manager';
 
 const managerCmd = program.command('manager')
     .description('Control Agent Manager (Mission Control)');
