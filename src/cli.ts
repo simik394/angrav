@@ -97,6 +97,89 @@ session.command('history')
         }
     });
 
+// Session list/switch commands (uses Agent Manager)
+import { listSessions, switchSession, SessionInfo } from './session';
+import { openAgentManager } from './manager';
+
+session.command('list')
+    .description('List all sessions from Agent Manager')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, context } = await connectToApp();
+            const { frame } = await openAgentManager(context);
+            const sessions = await listSessions(frame);
+            await browser.close();
+
+            output<SessionInfo[]>(sessions, opts.json, (data) => {
+                if (data.length === 0) {
+                    console.log('No sessions found.');
+                    return;
+                }
+                console.log('\n=== Sessions ===\n');
+                data.forEach((s, i) => {
+                    console.log(`${i + 1}. ${s.name}`);
+                });
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+session.command('switch')
+    .description('Switch to a session by name (partial match)')
+    .argument('<name>', 'Session name to switch to')
+    .action(async (name: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, context } = await connectToApp();
+            const { frame } = await openAgentManager(context);
+            const success = await switchSession(frame, name);
+            await browser.close();
+
+            output({ switched: success, name }, opts.json, () => {
+                console.log(success ? `✅ Switched to: ${name}` : `❌ Session "${name}" not found`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+// Prompt command
+import { sendPrompt } from './prompt';
+import * as fs from 'fs';
+
+program.command('prompt')
+    .description('Send a prompt to the agent')
+    .argument('<text>', 'Prompt text (or use --file)')
+    .option('-f, --file <path>', 'Read prompt from file')
+    .option('--no-wait', 'Do not wait for agent to finish')
+    .option('-t, --timeout <ms>', 'Wait timeout in ms', '120000')
+    .action(async (text: string, options: { file?: string; wait: boolean; timeout: string }) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+
+            const promptText = options.file
+                ? fs.readFileSync(options.file, 'utf-8')
+                : text;
+
+            await sendPrompt(frame, page, promptText, {
+                wait: options.wait !== false,
+                timeout: parseInt(options.timeout)
+            });
+
+            await browser.close();
+
+            output({ sent: true, length: promptText.length, waited: options.wait }, opts.json, () => {
+                console.log(`✅ Prompt sent (${promptText.length} chars)`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 // Output extraction commands
 import { extractResponse, extractCodeBlocks, extractCodeBlocksByLanguage, AgentResponse, CodeBlock } from './extraction';
 

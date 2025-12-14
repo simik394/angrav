@@ -98,3 +98,68 @@ export async function getConversationHistory(frame: Frame): Promise<Conversation
         messageCount: messages.length
     };
 }
+
+export interface SessionInfo {
+    name: string;
+    index: number;
+}
+
+/**
+ * Lists all available sessions from the Agent Manager window.
+ * Sessions appear as buttons with conversation titles.
+ */
+export async function listSessions(managerFrame: Frame): Promise<SessionInfo[]> {
+    console.log('📋 Listing sessions...');
+
+    const sessions: SessionInfo[] = [];
+
+    // Sessions are buttons in the manager with conversation titles
+    // Based on exploration: buttons with non-menu text (not File/Edit/View etc)
+    const buttons = managerFrame.locator('button:visible');
+    const count = await buttons.count();
+
+    const menuItems = ['File', 'Edit', 'View', 'Antigravity'];
+
+    for (let i = 0; i < count; i++) {
+        const btn = buttons.nth(i);
+        const text = await btn.innerText().catch(() => '');
+        const trimmed = text.trim();
+
+        // Skip menu items and empty
+        if (!trimmed || menuItems.includes(trimmed)) continue;
+
+        // Skip very short texts (likely icons)
+        if (trimmed.length < 5) continue;
+
+        sessions.push({ name: trimmed, index: i });
+    }
+
+    console.log(`Found ${sessions.length} sessions.`);
+    return sessions;
+}
+
+/**
+ * Switches to a session by name (partial match).
+ */
+export async function switchSession(managerFrame: Frame, sessionName: string): Promise<boolean> {
+    console.log(`🔄 Switching to session: ${sessionName}...`);
+
+    const sessions = await listSessions(managerFrame);
+    const match = sessions.find(s =>
+        s.name.toLowerCase().includes(sessionName.toLowerCase())
+    );
+
+    if (!match) {
+        console.error(`Session "${sessionName}" not found.`);
+        return false;
+    }
+
+    // Click the session button
+    const btn = managerFrame.locator('button:visible').nth(match.index);
+    await btn.click();
+    await managerFrame.waitForTimeout(500);
+
+    console.log(`✅ Switched to: ${match.name}`);
+    return true;
+}
+
