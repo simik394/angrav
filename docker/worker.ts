@@ -5,8 +5,9 @@
  * Output: /workspace/output/task-*-result.json
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+/// <reference types="node" />
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { connectToApp, getAgentFrame } from './src/core';
 import { sendPrompt } from './src/prompt';
 import { waitForIdle } from './src/state';
@@ -64,9 +65,10 @@ async function processTask(taskPath: string): Promise<void> {
             throw new Error('Task file missing "prompt" field');
         }
 
-        // Connect to Antigravity
-        console.log('  🔌 Connecting to Antigravity...');
-        const { browser, context, page } = await connectToApp('http://localhost:9222');
+        // Connect to Antigravity via CDP (uses env var in Docker)
+        const cdpEndpoint = process.env.BROWSER_CDP_ENDPOINT || 'http://localhost:9222';
+        console.log(`  🔌 Connecting to Antigravity at ${cdpEndpoint}...`);
+        const { browser, context, page } = await connectToApp(cdpEndpoint);
 
         try {
             const frame = await getAgentFrame(page);
@@ -132,7 +134,7 @@ async function watchTasks(): Promise<void> {
     while (true) {
         try {
             const files = fs.readdirSync(TASKS_DIR)
-                .filter(f => f.endsWith('.json') && !f.endsWith('.processed'));
+                .filter((f: string) => f.endsWith('.json') && !f.endsWith('.processed'));
 
             for (const file of files) {
                 const taskPath = path.join(TASKS_DIR, file);

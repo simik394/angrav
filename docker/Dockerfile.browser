@@ -1,0 +1,71 @@
+# Antigravity Browser Container
+# Heavy container with Xvfb, VNC, Windsurf - rarely rebuilt
+
+FROM debian:bookworm-slim
+
+LABEL maintainer="angrav-automation"
+LABEL description="Antigravity (Windsurf) IDE with X11/VNC - browser container"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:99
+
+# Install X11, VNC, and Electron dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb \
+    x11vnc \
+    fluxbox \
+    dbus-x11 \
+    socat \
+    ca-certificates \
+    libx11-xcb1 \
+    libxcb-dri3-0 \
+    libxtst6 \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
+    libxss1 \
+    libasound2 \
+    libgbm1 \
+    libdrm2 \
+    libxshmfence1 \
+    supervisor \
+    curl \
+    gnupg \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Windsurf
+RUN curl -fsSL https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg | gpg --dearmor -o /usr/share/keyrings/windsurf-archive-keyring.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/windsurf-archive-keyring.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" > /etc/apt/sources.list.d/windsurf.list \
+    && apt-get update \
+    && apt-get install -y windsurf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -s /bin/bash angrav \
+    && mkdir -p /home/angrav/.config/Windsurf \
+    && mkdir -p /workspace \
+    && chown -R angrav:angrav /home/angrav /workspace
+
+# Fix chrome-sandbox permissions
+RUN chmod 4755 /usr/share/windsurf/chrome-sandbox 2>/dev/null || true
+
+# Supervisord config
+COPY docker/supervisord-browser.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Startup script
+COPY docker/start-browser.sh /start-browser.sh
+RUN chmod +x /start-browser.sh
+
+# Expose ports
+# 9222 = CDP (internal)
+# 9223 = CDP proxy (external)
+# 5900 = VNC
+EXPOSE 9222 9223 5900
+
+VOLUME ["/workspace", "/home/angrav/.config/Windsurf"]
+
+USER angrav
+WORKDIR /workspace
+
+CMD ["/start-browser.sh"]

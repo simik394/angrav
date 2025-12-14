@@ -1,18 +1,21 @@
-version: '3.8'
+# Angrav Docker Compose - Separate browser and worker containers
 
 services:
-  angrav:
+  # Browser container - heavy, rarely rebuilt
+  # Contains: Windsurf IDE, Xvfb, VNC server, socat CDP proxy
+  angrav-browser:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
-    container_name: angrav-standalone
-    hostname: angrav
+      dockerfile: docker/Dockerfile.browser
+    image: angrav-browser:latest
+    container_name: angrav-browser
+    hostname: angrav-browser
 
     ports:
       # VNC for debugging (connect with any VNC client)
-      - "5900:5900"
-      # CDP for external Playwright if needed
-      - "9222:9222"
+      - "5901:5900"
+      # CDP proxy for external Playwright access
+      - "9223:9223"
 
     volumes:
       # Workspace - your tasks and project files
@@ -22,11 +25,9 @@ services:
       - angrav-config:/home/angrav/.config/Windsurf
 
     environment:
-      # Optional: pre-set auth token
-      # WINDSURF_TOKEN: your-token-here
-      TZ: Europe/Prague
+      - TZ=Europe/Prague
 
-    # Resource limits
+    # Resource limits for Electron app
     deploy:
       resources:
         limits:
@@ -34,11 +35,30 @@ services:
         reservations:
           memory: 2G
 
-    # Keep container running
     restart: unless-stopped
-    # For GPU acceleration (optional, uncomment if needed)
-    # devices:
-    #   - /dev/dri:/dev/dri
+
+  # Worker container - lightweight, fast rebuilds
+  # Contains: Node.js, Playwright automation code
+  angrav-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    image: angrav-worker:latest
+    container_name: angrav-worker
+
+    volumes:
+      # Shared workspace for tasks/output
+      - ./workspace:/workspace
+
+    environment:
+      # Connect to browser container via CDP proxy
+      - BROWSER_CDP_ENDPOINT=http://angrav-browser:9223
+      - NODE_ENV=production
+
+    depends_on:
+      - angrav-browser
+
+    restart: unless-stopped
 
 volumes:
   angrav-config:
@@ -46,17 +66,19 @@ volumes:
 
 # Usage:
 #
-# Build:
-#   docker-compose build
+# Build both containers:
+#   docker compose build
 #
 # Start:
-#   docker-compose up -d
+#   docker compose up -d
 #
 # View logs:
-#   docker-compose logs -f angrav
+#   docker compose logs -f
+#   docker compose logs -f angrav-browser
+#   docker compose logs -f angrav-worker
 #
 # First-time auth:
-#   1. Connect VNC: vncviewer localhost:5900
+#   1. Connect VNC: vncviewer localhost:5901
 #   2. Log in to Windsurf in the GUI
 #   3. Auth persists in angrav-config volume
 #
@@ -66,5 +88,9 @@ volumes:
 # Check output:
 #   cat workspace/output/task-001-result.json
 #
+# Rebuild worker only (fast):
+#   docker compose build angrav-worker
+#   docker compose up -d angrav-worker
+#
 # Stop:
-#   docker-compose down
+#   docker compose down
