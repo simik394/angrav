@@ -60,6 +60,7 @@ graph TD
 - **Anticipated**: Realistic (some selector tweaking, minor issues)
 - **Max**: Worst case (significant DOM changes, debugging needed)
 - **Complexity**: 1-5 scale (1=trivial, 5=complex)
+- **CO45.estm**: Claude Opus 4.5 estimate (AI agent implementation time)
 
 ---
 
@@ -72,83 +73,22 @@ graph TD
 
 ---
 
-### Phase 1: CLI JSON Output
-
-**Goal**: Add `--json` flag to all CLI commands for machine-readable output.
-
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 1.1 | Refactor CLI output helpers | 15min | 30min | 1h | 2 | TypeScript |
-| 1.2 | Add `--json` to `status` command | 10min | 20min | 30min | 1 | commander.js |
-| 1.3 | Add `--json` to `wait` command | 10min | 20min | 30min | 1 | commander.js |
-| 1.4 | Add `--json` to `session new` | 10min | 20min | 30min | 1 | commander.js |
-| 1.5 | Add `--json` to `session history` | 15min | 30min | 45min | 2 | commander.js |
-| 1.6 | Define output schemas (types) | 20min | 40min | 1h | 2 | TypeScript |
-| 1.7 | Write tests for JSON output | 20min | 40min | 1h | 2 | Playwright |
-| 1.8 | Update docs | 15min | 30min | 45min | 1 | Markdown |
-| **Total Phase 1** | **1h 55min** | **3h 50min** | **5h 40min** | | |
-
----
-
-### Phase 2: Output Extraction
-
-**Goal**: Extract code blocks, thoughts, and final answers from agent responses.
-
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 2.1 | Analyze DOM for code blocks | 30min | 1h | 2h | 3 | Browser DevTools, HTML dump |
-| 2.2 | Implement `extractCodeBlocks()` | 30min | 1h | 2h | 3 | Playwright, TypeScript |
-| 2.3 | Implement language detection | 15min | 30min | 1h | 2 | Regex, DOM attributes |
-| 2.4 | Implement `extractThoughts()` | 20min | 45min | 1.5h | 3 | Playwright (collapsible handling) |
-| 2.5 | Implement `extractAnswer()` | 20min | 45min | 1.5h | 3 | Playwright |
-| 2.6 | Create unified `extractResponse()` | 20min | 40min | 1h | 2 | TypeScript |
-| 2.7 | Add CLI `output` command | 15min | 30min | 45min | 2 | commander.js |
-| 2.8 | Add `--json` output | 10min | 20min | 30min | 1 | TypeScript |
-| 2.9 | Write tests | 30min | 1h | 2h | 3 | Playwright |
-| 2.10 | Update docs | 15min | 30min | 45min | 1 | Markdown |
-| **Total Phase 2** | **3h 25min** | **6h 50min** | **13h** | | |
-
----
-
-### Phase 2.5: Agent Manager
-
-**Goal**: Interact with the Agent Manager ("Mission Control") window for multi-agent orchestration.
-
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 2.5.1 | Research Agent Manager window access | 30min | 1h | 2h | 3 | Browser DevTools, page.frames() |
-| 2.5.2 | Identify Agent Manager frame/window | 20min | 45min | 1.5h | 3 | Playwright (multiple windows) |
-| 2.5.3 | Implement `openAgentManager()` | 20min | 40min | 1h | 2 | Playwright |
-| 2.5.4 | Analyze task list structure | 30min | 1h | 2h | 3 | Browser DevTools, HTML dump |
-| 2.5.5 | Implement `listAgentTasks()` | 30min | 1h | 2h | 3 | Playwright |
-| 2.5.6 | Implement `getTaskStatus(taskId)` | 20min | 45min | 1.5h | 3 | Playwright |
-| 2.5.7 | Analyze approval UI elements | 20min | 45min | 1.5h | 3 | Browser DevTools |
-| 2.5.8 | Implement `approveTask(taskId)` | 20min | 45min | 1.5h | 3 | Playwright |
-| 2.5.9 | Implement `rejectTask(taskId)` | 15min | 30min | 1h | 2 | Playwright |
-| 2.5.10 | Implement `spawnAgent(workspace, task)` | 30min | 1h | 2h | 4 | Playwright |
-| 2.5.11 | Add CLI `manager` commands | 25min | 50min | 1.5h | 2 | commander.js |
-| 2.5.12 | Write tests | 30min | 1h | 2h | 3 | Playwright |
-| 2.5.13 | Update docs | 15min | 30min | 45min | 1 | Markdown |
-| **Total Phase 2.5** | **4h 45min** | **10h 30min** | **20h 15min** | | |
-
----
-
 ### Phase 3: Context Injection
 
 **Goal**: Programmatically add file references and upload documents.
 
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 3.1 | Analyze `@file` popup structure | 30min | 1h | 2h | 3 | Browser DevTools, HTML dump |
-| 3.2 | Implement `addFileContext()` | 45min | 1.5h | 3h | 4 | Playwright (type, wait, select) |
-| 3.3 | Handle popup item selection | 30min | 1h | 2h | 4 | Playwright (dynamic list) |
-| 3.4 | Analyze "Add Context" button | 15min | 30min | 1h | 2 | Browser DevTools |
-| 3.5 | Implement `uploadImage()` | 30min | 1h | 2h | 3 | Playwright (file dialog) |
-| 3.6 | Implement `uploadDocument()` | 30min | 1h | 2h | 3 | Playwright (file dialog) |
-| 3.7 | Add CLI `context` commands | 20min | 40min | 1h | 2 | commander.js |
-| 3.8 | Write tests | 30min | 1h | 2h | 3 | Playwright |
-| 3.9 | Update docs | 15min | 30min | 45min | 1 | Markdown |
-| **Total Phase 3** | **4h 25min** | **8h 10min** | **15h 45min** | | |
+| ID | Task | Min | Anticipated | Max | CO45.estm | Complexity |
+|----|------|-----|-------------|-----|-----------|------------|
+| 3.1 | Analyze `@file` popup structure | 30min | 1h | 2h | 20min | 3 |
+| 3.2 | Implement `addFileContext()` | 45min | 1.5h | 3h | 35min | 4 |
+| 3.3 | Handle popup item selection | 30min | 1h | 2h | 25min | 4 |
+| 3.4 | Analyze "Add Context" button | 15min | 30min | 1h | 10min | 2 |
+| 3.5 | Implement `uploadImage()` | 30min | 1h | 2h | 20min | 3 |
+| 3.6 | Implement `uploadDocument()` | 30min | 1h | 2h | 15min | 3 |
+| 3.7 | Add CLI `context` commands | 20min | 40min | 1h | 15min | 2 |
+| 3.8 | Write tests | 30min | 1h | 2h | 25min | 3 |
+| 3.9 | Update docs | 15min | 30min | 45min | 10min | 1 |
+| **Total Phase 3** | **4h 25min** | **8h 10min** | **15h 45min** | **~3h** | |
 
 ---
 
@@ -156,17 +96,17 @@ graph TD
 
 **Goal**: Switch models and conversation modes programmatically.
 
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 4.1 | Analyze model dropdown selectors | 20min | 45min | 1.5h | 3 | Browser DevTools |
-| 4.2 | Implement `setModel()` | 20min | 45min | 1.5h | 3 | Playwright |
-| 4.3 | Analyze mode dropdown selectors | 15min | 30min | 1h | 2 | Browser DevTools |
-| 4.4 | Implement `setMode()` | 20min | 45min | 1.5h | 3 | Playwright |
-| 4.5 | Implement `getConfig()` | 15min | 30min | 1h | 2 | Playwright |
-| 4.6 | Add CLI `config` commands | 20min | 40min | 1h | 2 | commander.js |
-| 4.7 | Write tests | 20min | 45min | 1.5h | 2 | Playwright |
-| 4.8 | Update docs | 10min | 20min | 30min | 1 | Markdown |
-| **Total Phase 4** | **2h 20min** | **5h** | **9h 30min** | | |
+| ID | Task | Min | Anticipated | Max | CO45.estm | Complexity |
+|----|------|-----|-------------|-----|-----------|------------|
+| 4.1 | Analyze model dropdown selectors | 20min | 45min | 1.5h | 15min | 3 |
+| 4.2 | Implement `setModel()` | 20min | 45min | 1.5h | 20min | 3 |
+| 4.3 | Analyze mode dropdown selectors | 15min | 30min | 1h | 10min | 2 |
+| 4.4 | Implement `setMode()` | 20min | 45min | 1.5h | 15min | 3 |
+| 4.5 | Implement `getConfig()` | 15min | 30min | 1h | 10min | 2 |
+| 4.6 | Add CLI `config` commands | 20min | 40min | 1h | 15min | 2 |
+| 4.7 | Write tests | 20min | 45min | 1.5h | 20min | 2 |
+| 4.8 | Update docs | 10min | 20min | 30min | 5min | 1 |
+| **Total Phase 4** | **2h 20min** | **5h** | **9h 30min** | **~2h** | |
 
 ---
 
@@ -174,39 +114,38 @@ graph TD
 
 **Goal**: Apply code changes, undo actions, read terminal output.
 
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 5.1 | Analyze code block action buttons | 30min | 1h | 2h | 4 | Browser DevTools |
-| 5.2 | Implement `applyCodeChanges()` | 45min | 1.5h | 3h | 4 | Playwright |
-| 5.3 | Implement `undoLastAction()` | 20min | 45min | 1.5h | 3 | Playwright |
-| 5.4 | Research xterm reading strategy | 30min | 1h | 2h | 4 | xterm.js docs, DevTools |
-| 5.5 | Implement `readTerminal()` | 45min | 1.5h | 3h | 5 | Playwright, accessibility tree |
-| 5.6 | Add CLI `apply`, `undo`, `terminal` | 20min | 45min | 1h | 2 | commander.js |
-| 5.7 | Write tests | 30min | 1h | 2h | 3 | Playwright |
-| 5.8 | Update docs | 15min | 30min | 45min | 1 | Markdown |
-| **Total Phase 5** | **4h 15min** | **8h** | **15h 15min** | | |
+| ID | Task | Min | Anticipated | Max | CO45.estm | Complexity |
+|----|------|-----|-------------|-----|-----------|------------|
+| 5.1 | Analyze code block action buttons | 30min | 1h | 2h | 20min | 4 |
+| 5.2 | Implement `applyCodeChanges()` | 45min | 1.5h | 3h | 40min | 4 |
+| 5.3 | Implement `undoLastAction()` | 20min | 45min | 1.5h | 15min | 3 |
+| 5.4 | Research xterm reading strategy | 30min | 1h | 2h | 25min | 4 |
+| 5.5 | Implement `readTerminal()` | 45min | 1.5h | 3h | 45min | 5 |
+| 5.6 | Add CLI `apply`, `undo`, `terminal` | 20min | 45min | 1h | 15min | 2 |
+| 5.7 | Write tests | 30min | 1h | 2h | 25min | 3 |
+| 5.8 | Update docs | 15min | 30min | 45min | 10min | 1 |
+| **Total Phase 5** | **4h 15min** | **8h** | **15h 15min** | **~3.5h** | |
 
----
 ---
 
 ### Phase 6: Multi-Session Monitoring
 
 **Goal**: Enable parallel orchestration of multiple Antigravity sessions.
 
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 6.1 | Create `src/registry.ts` with `SessionRegistry` class | 1h | 2h | 4h | 3 | TypeScript, EventEmitter |
-| 6.2 | Implement `discover()`, `get()`, `list()` | 30min | 1h | 2h | 3 | Playwright |
-| 6.3 | Implement polling with EventEmitter | 30min | 1h | 2h | 3 | TypeScript |
-| 6.4 | Create `src/multi-session.ts` | 30min | 1h | 2h | 2 | TypeScript |
-| 6.5 | Implement `waitForAny()` | 30min | 1h | 2h | 3 | TypeScript |
-| 6.6 | Implement `waitForAll()` | 30min | 1h | 2h | 3 | TypeScript |
-| 6.7 | Create `src/parallel.ts` | 30min | 1h | 2h | 2 | TypeScript |
-| 6.8 | Implement `executeParallel()`, `fanOut()` | 45min | 1.5h | 3h | 3 | TypeScript |
-| 6.9 | Add `sessions` CLI commands | 30min | 1h | 2h | 2 | commander.js |
-| 6.10 | Write integration tests | 1h | 2h | 4h | 3 | Playwright |
-| 6.11 | Update docs | 15min | 30min | 1h | 1 | Markdown |
-| **Total Phase 6** | **7h** | **13h** | **26h** | | |
+| ID | Task | Min | Anticipated | Max | CO45.estm | Complexity |
+|----|------|-----|-------------|-----|-----------|------------|
+| 6.1 | Create `src/registry.ts` with `SessionRegistry` class | 1h | 2h | 4h | 30min | 3 |
+| 6.2 | Implement `discover()`, `get()`, `list()` | 30min | 1h | 2h | 20min | 3 |
+| 6.3 | Implement polling with EventEmitter | 30min | 1h | 2h | 20min | 3 |
+| 6.4 | Create `src/multi-session.ts` | 30min | 1h | 2h | 15min | 2 |
+| 6.5 | Implement `waitForAny()` | 30min | 1h | 2h | 20min | 3 |
+| 6.6 | Implement `waitForAll()` | 30min | 1h | 2h | 15min | 3 |
+| 6.7 | Create `src/parallel.ts` | 30min | 1h | 2h | 15min | 2 |
+| 6.8 | Implement `executeParallel()`, `fanOut()` | 45min | 1.5h | 3h | 25min | 3 |
+| 6.9 | Add `sessions` CLI commands | 30min | 1h | 2h | 20min | 2 |
+| 6.10 | Write integration tests | 1h | 2h | 4h | 40min | 3 |
+| 6.11 | Update docs | 15min | 30min | 1h | 10min | 1 |
+| **Total Phase 6** | **7h** | **13h** | **26h** | **~4h** | |
 
 ---
 
@@ -214,36 +153,37 @@ graph TD
 
 **Goal**: Add observability and tracing to agent operations.
 
-| ID | Task | Min | Anticipated | Max | Complexity | Tools |
-|----|------|-----|-------------|-----|------------|-------|
-| 7.1 | Add `langfuse` dependency | 10min | 20min | 30min | 1 | npm |
-| 7.2 | Create `src/telemetry.ts` with `AgentTelemetry` class | 1h | 2h | 4h | 3 | TypeScript, Langfuse SDK |
-| 7.3 | Add environment variable handling | 20min | 40min | 1h | 2 | TypeScript |
-| 7.4 | Wrap session operations with traces | 45min | 1.5h | 3h | 3 | TypeScript |
-| 7.5 | Add spans for prompt submission | 30min | 1h | 2h | 3 | TypeScript |
-| 7.6 | Add spans for response extraction | 30min | 1h | 2h | 3 | TypeScript |
-| 7.7 | Capture errors as events | 20min | 40min | 1.5h | 2 | TypeScript |
-| 7.8 | Add telemetry CLI config commands | 30min | 1h | 2h | 2 | commander.js |
-| 7.9 | Add `--no-telemetry` flag | 15min | 30min | 1h | 1 | commander.js |
-| 7.10 | Update docs with telemetry setup | 30min | 1h | 2h | 1 | Markdown |
-| **Total Phase 7** | **4h 50min** | **9h 30min** | **19h** | | |
+| ID | Task | Min | Anticipated | Max | CO45.estm | Complexity |
+|----|------|-----|-------------|-----|-----------|------------|
+| 7.1 | Add `langfuse` dependency | 10min | 20min | 30min | 5min | 1 |
+| 7.2 | Create `src/telemetry.ts` with `AgentTelemetry` class | 1h | 2h | 4h | 35min | 3 |
+| 7.3 | Add environment variable handling | 20min | 40min | 1h | 10min | 2 |
+| 7.4 | Wrap session operations with traces | 45min | 1.5h | 3h | 25min | 3 |
+| 7.5 | Add spans for prompt submission | 30min | 1h | 2h | 15min | 3 |
+| 7.6 | Add spans for response extraction | 30min | 1h | 2h | 15min | 3 |
+| 7.7 | Capture errors as events | 20min | 40min | 1.5h | 10min | 2 |
+| 7.8 | Add telemetry CLI config commands | 30min | 1h | 2h | 15min | 2 |
+| 7.9 | Add `--no-telemetry` flag | 15min | 30min | 1h | 5min | 1 |
+| 7.10 | Update docs with telemetry setup | 30min | 1h | 2h | 15min | 1 |
+| **Total Phase 7** | **4h 50min** | **9h 30min** | **19h** | **~2.5h** | |
 
 ---
 
 ## Summary
 
-| Phase | Feature | Min | Anticipated | Max | Status |
-|-------|---------|-----|-------------|-----|--------|
-| 0 | State Monitoring | - | (done) | - | ✅ |
-| 0 | Session Management | - | (done) | - | ✅ |
-| 1 | CLI JSON Output | 1h 55min | 3h 50min | 5h 40min | ✅ |
-| 2 | Output Extraction | 3h 25min | 6h 50min | 13h | ✅ |
-| 2.5 | Agent Manager | 4h 45min | 10h 30min | 20h 15min | ✅ |
-| 3 | Context Injection | 4h 25min | 8h 10min | 15h 45min | 📋 |
-| 4 | Model Configuration | 2h 20min | 5h | 9h 30min | 📋 |
-| 5 | Review & Execution | 4h 15min | 8h | 15h 15min | 📋 |
-| 6 | Multi-Session Monitoring | 7h | 13h | 26h | 📋 |
-| 7 | Langfuse Telemetry | 4h 50min | 9h 30min | 19h | 📋 |
+| Phase | Feature | Min | Anticipated | Max | CO45.estm | Status |
+|-------|---------|-----|-------------|-----|-----------|--------|
+| 0 | State Monitoring | - | (done) | - | - | ✅ |
+| 0 | Session Management | - | (done) | - | - | ✅ |
+| 1 | CLI JSON Output | 1h 55min | 3h 50min | 5h 40min | - | ✅ |
+| 2 | Output Extraction | 3h 25min | 6h 50min | 13h | - | ✅ |
+| 2.5 | Agent Manager | 4h 45min | 10h 30min | 20h 15min | - | ✅ |
+| 3 | Context Injection | 4h 25min | 8h 10min | 15h 45min | ~3h | 📋 |
+| 4 | Model Configuration | 2h 20min | 5h | 9h 30min | ~2h | 📋 |
+| 5 | Review & Execution | 4h 15min | 8h | 15h 15min | ~3.5h | 📋 |
+| 6 | Multi-Session Monitoring | 7h | 13h | 26h | ~4h | 📋 |
+| 7 | Langfuse Telemetry | 4h 50min | 9h 30min | 19h | ~2.5h | 📋 |
+| | **Remaining Total** | | | | **~15h** | |
 
 ---
 
@@ -251,10 +191,10 @@ graph TD
 
 ```
 Completed:   Phase 0-2.5 (Core infrastructure)
-Next:        Phase 3 (Context) + Phase 4 (Config)  → ~13h
-Then:        Phase 5 (Review/Execution)            → ~8h
-Parallel:    Phase 6 (Multi-Session)               → ~13h
-Optional:    Phase 7 (Langfuse)                    → ~10h
+Next:        Phase 3 (Context) + Phase 4 (Config)  → CO45: ~5h
+Then:        Phase 5 (Review/Execution)            → CO45: ~3.5h
+Parallel:    Phase 6 (Multi-Session)               → CO45: ~4h
+Optional:    Phase 7 (Langfuse)                    → CO45: ~2.5h
 ```
 
 ---
@@ -270,4 +210,3 @@ Optional:    Phase 7 (Langfuse)                    → ~10h
 | **HTML dump scripts** | Offline DOM inspection |
 | **Markdown** | Documentation |
 | **Langfuse SDK** | Telemetry (Phase 7) |
-
