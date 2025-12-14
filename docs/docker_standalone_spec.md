@@ -1,48 +1,48 @@
 # Standalone Antigravity Docker Container
 
-> **Status**: Proposal  
+> **Status**: ✅ Implemented  
 > **Date**: 2025-12-14  
-> **Goal**: Fully self-contained AutoAgrav container (Antigravity + automation in one)
+> **Goal**: Dockerized Antigravity with separated browser and worker containers
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                   Docker Container                        │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │                     Xvfb :99                        │  │
-│  │    ┌────────────────────────────────────────────┐  │  │
-│  │    │         Antigravity IDE (Electron)         │  │  │
-│  │    │       └── Cascade Agent Panel              │  │  │
-│  │    │             CDP @ localhost:9222           │  │  │
-│  │    └────────────────────────────────────────────┘  │  │
-│  └────────────────────────────────────────────────────┘  │
-│                           ↓ CDP                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │             angrav automation (Playwright)          │  │
-│  │   - SessionRegistry                                 │  │
-│  │   - executeParallel / fanOut                        │  │
-│  │   - Reads /workspace/tasks/*.json                   │  │
-│  │   - Writes /workspace/output/*.json                 │  │
-│  └────────────────────────────────────────────────────┘  │
-│                           ↓                              │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  Optional: x11vnc @ :5900 (for debugging)           │  │
-│  └────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
-          ↕                              ↕
-   /workspace (mounted)           VNC port (optional)
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Docker Compose Network                            │
+│                                                                       │
+│  ┌─────────────────────────────────┐  ┌───────────────────────────┐  │
+│  │      angrav-browser             │  │      angrav-worker        │  │
+│  │  ┌───────────────────────────┐  │  │                           │  │
+│  │  │   Xvfb :99 + fluxbox      │  │  │  - TypeScript/Playwright  │  │
+│  │  │  ┌─────────────────────┐  │  │  │  - Watches /workspace/    │  │
+│  │  │  │  Antigravity IDE    │  │  │  │    tasks/*.json           │  │
+│  │  │  │  CDP @ :9222        │◄─┼──┼──┼──  Connects via CDP       │  │
+│  │  │  └─────────────────────┘  │  │  │  - Writes output/*.json   │  │
+│  │  │  socat proxy → :9223      │  │  │                           │  │
+│  │  │  x11vnc → :5900           │  │  │  HEALTHCHECK: CDP check   │  │
+│  │  └───────────────────────────┘  │  └───────────────────────────┘  │
+│  │  + Chromium (--no-sandbox)      │                                  │
+│  └─────────────────────────────────┘                                  │
+│           │              │                                            │
+│       :5901 VNC      :9223 CDP                                        │
+└───────────┼──────────────┼────────────────────────────────────────────┘
+            │              │
+        Host Access    Host Access
 ```
 
 ## Components
 
-| Component | Purpose |
-|-----------|---------|
-| `Xvfb` | Virtual X11 display for headless Electron |
-| `Antigravity` | The AI IDE (Electron app) |
-| `angrav` | Our automation library (TypeScript/Playwright) |
-| `supervisord` | Process manager (starts all services) |
-| `x11vnc` | Optional VNC for visual debugging |
+| Component | Container | Purpose |
+|-----------|-----------|---------|
+| `Xvfb` | browser | Virtual X11 display for headless Electron |
+| `fluxbox` | browser | Lightweight window manager |
+| `Antigravity` | browser | The AI IDE (Electron app) |
+| `x11vnc` | browser | VNC server for visual debugging |
+| `socat` | browser | Proxies CDP from 9222 → 9223 |
+| `chromium` | browser | System browser for OAuth (`--no-sandbox`) |
+| `supervisord` | browser | Process manager |
+| `worker.ts` | worker | Task watcher and executor |
+| `Playwright` | worker | CDP connection to browser |
 
 ## Interface
 
@@ -186,34 +186,43 @@ watcher.on('add', async (path) => {
 **Volume mount:**
 ```yaml
 volumes:
-  - angrav-config:/home/angrav/.config/Windsurf
+  - angrav-config:/home/angrav/.config/Antigravity
 ```
 
 ## Implementation Status
 
 | File | Status |
 |------|--------|
-| `docker/Dockerfile` | ✅ Created |
-| `docker/supervisord.conf` | ✅ Created |
-| `docker/entrypoint.sh` | ✅ Created |
+| `docker/Dockerfile.browser` | ✅ Created |
+| `docker/Dockerfile.worker` | ✅ Created |
+| `docker/supervisord-browser.conf` | ✅ Created |
+| `docker/start-browser.sh` | ✅ Created |
 | `docker/worker.ts` | ✅ Created |
 | `docker/docker-compose.yml` | ✅ Created |
 
 ## Quick Start
 
 ```bash
-# Build
-cd docker && docker-compose build
+# Build and start
+cd agents/angrav/docker
+docker compose build
+docker compose up -d
 
-# Start
-docker-compose up -d
+# First-time: Connect VNC and log in via Google
+vncviewer localhost:5901
 
-# First-time: Connect VNC and log in
-vncviewer localhost:5900
+# Check container health
+docker compose ps
 
-# Submit task
+# Check CDP connectivity
+curl http://localhost:9223/json/version
+
+# Submit task (once logged in)
 echo '{"prompt": "Create hello.py"}' > workspace/tasks/task-001.json
 
 # Check result
 cat workspace/output/task-001-result.json
+
+# View logs
+docker compose logs -f
 ```
