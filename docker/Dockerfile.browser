@@ -44,6 +44,9 @@ RUN echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.gpg] https://us-
     && apt-get install -y antigravity \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure Chromium for containerized environment (no sandbox)
+RUN echo 'export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-sandbox"' >> /etc/chromium.d/default-flags
+
 # Create non-root user
 RUN useradd -m -s /bin/bash angrav \
     && mkdir -p /home/angrav/.config/Antigravity \
