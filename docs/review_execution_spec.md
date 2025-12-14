@@ -91,16 +91,7 @@ angrav terminal read --json
 | Apply Button Scope | Buttons are per-code-block, need to target correctly |
 | Undo Scope | May affect multiple files |
 
-## 8. Work Breakdown
+---
 
-| Task | Est. Time | Complexity |
-|------|-----------|------------|
-| Analyze code block action buttons | 1h | 4 |
-| Implement `applyCodeChanges()` | 1.5h | 4 |
-| Implement `undoLastAction()` | 45min | 3 |
-| Research xterm reading strategy | 1h | 4 |
-| Implement `readTerminal()` | 1.5h | 5 |
-| CLI integration | 45min | 2 |
-| Testing | 1h | 3 |
+> 📋 **Work Breakdown**: See [[wbs|wbs.md]] Phase 5
 
-**Total: ~8h anticipated**

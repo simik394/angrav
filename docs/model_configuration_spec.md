@@ -80,16 +80,7 @@ angrav config show
 angrav config show --json
 ```
 
-## 7. Work Breakdown
+---
 
-| Task | Est. Time | Complexity |
-|------|-----------|------------|
-| Analyze model dropdown selectors | 45min | 3 |
-| Implement `setModel()` | 45min | 3 |
-| Analyze mode dropdown selectors | 30min | 2 |
-| Implement `setMode()` | 45min | 3 |
-| Implement `getConfig()` | 30min | 2 |
-| CLI integration | 40min | 2 |
-| Testing | 45min | 2 |
+> 📋 **Work Breakdown**: See [[wbs|wbs.md]] Phase 4
 
-**Total: ~5h anticipated**

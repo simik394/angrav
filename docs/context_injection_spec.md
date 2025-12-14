@@ -86,17 +86,7 @@ angrav context add-image screenshot.png
 angrav context add-doc spec.pdf
 ```
 
-## 7. Work Breakdown
+---
 
-| Task | Est. Time | Complexity |
-|------|-----------|------------|
-| Analyze popup structure | 1h | 3 |
-| Implement `addFileContext()` | 1.5h | 4 |
-| Handle popup selection | 1h | 4 |
-| Identify Add Context button | 30min | 2 |
-| Implement `uploadImage()` | 1h | 3 |
-| Implement `uploadDocument()` | 1h | 3 |
-| CLI integration | 40min | 2 |
-| Testing | 1h | 3 |
+> 📋 **Work Breakdown**: See [[wbs|wbs.md]] Phase 3
 
-**Total: ~8h anticipated**
