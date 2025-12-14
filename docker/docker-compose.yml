@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  angrav:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: angrav-standalone
+    hostname: angrav
+
+    ports:
+      # VNC for debugging (connect with any VNC client)
+      - "5900:5900"
+      # CDP for external Playwright if needed
+      - "9222:9222"
+
+    volumes:
+      # Workspace - your tasks and project files
+      - ./workspace:/workspace
+
+      # Persistent auth/settings (survives container restart)
+      - angrav-config:/home/angrav/.config/Windsurf
+
+    environment:
+      # Optional: pre-set auth token
+      # WINDSURF_TOKEN: your-token-here
+      TZ: Europe/Prague
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+    # Keep container running
+    restart: unless-stopped
+    # For GPU acceleration (optional, uncomment if needed)
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+volumes:
+  angrav-config:
+    name: angrav-config
+
+# Usage:
+#
+# Build:
+#   docker-compose build
+#
+# Start:
+#   docker-compose up -d
+#
+# View logs:
+#   docker-compose logs -f angrav
+#
+# First-time auth:
+#   1. Connect VNC: vncviewer localhost:5900
+#   2. Log in to Windsurf in the GUI
+#   3. Auth persists in angrav-config volume
+#
+# Submit a task:
+#   echo '{"prompt": "Create a Python hello world"}' > workspace/tasks/task-001.json
+#
+# Check output:
+#   cat workspace/output/task-001-result.json
+#
+# Stop:
+#   docker-compose down
