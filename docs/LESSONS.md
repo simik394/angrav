@@ -40,3 +40,18 @@
 ### 7. Interacting with Collapsible Elements
 - **Issue:** Agent "Thoughts" are hidden in a collapsible section.
 - **Solution:** Check for the existence of the toggle button (`button:has-text("Thought")`), click it, and wait for the content (`.prose`) to become visible before reading.
+
+## Feature: Infrastructure Merge & Git Workflow
+**Date:** 2025-12-18
+
+### 1. Verification of Deletions in Diff
+- **Issue:** `git diff main..feature` showed many file deletions, causing concern about destructive merge.
+- **Solution:** Realized that `git diff A..B` shows changes from A to B. If B is an older branch, it won't have files added to A recently. Used `git diff f67b2cb..feature` (diff from merge base) to verify that the feature branch only added new infrastructure files and did not explicitly delete existing ones.
+
+### 2. Handling Local Uncommitted Changes
+- **Issue:** Local changes on `main` (like path typo fixes) can block or complicate merges.
+- **Solution:** Staged and committed local changes with a clear message (`chore: fix typo...`) before merging to ensure a clean state and proper history.
+
+### 3. Comparing Multiple Feature Branches
+- **Issue:** Multiple branches existed for similar features (`jules-infra-...` and `feat-add-windmill-...`).
+- **Solution:** Compared the branches using `git diff branch1 branch2` to identify which one was more advanced and complete, ensuring the best version was merged into `main`.
