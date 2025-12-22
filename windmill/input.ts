@@ -14,35 +14,9 @@
 import { chromium } from 'playwright';
 import { withHumanHands, humanType } from '../../shared/human-lock';
 import { markTabBusy } from '../../shared/tab-pool';
+import { getCdpEndpoint, getWindmillEndpoint } from '../../shared/service-discovery';
 
-// Windmill webhook URL for the output script
-const OUTPUT_WEBHOOK_URL = process.env.WINDMILL_OUTPUT_WEBHOOK || 'http://windmill-server:8000/api/w/main/jobs/run_wait_result/p/f/angrav/output';
 
-// CDP endpoint
-const CDP_ENDPOINT = process.env.BROWSER_CDP_ENDPOINT || 'http://angrav-browser:9223';
-
-/**
- * Resolve hostname to IP for CDP connection
- */
-async function resolveCdpEndpoint(endpoint: string): Promise<string> {
-    const url = new URL(endpoint);
-
-    if (url.hostname !== 'localhost' && !url.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-        const dns = await import('node:dns');
-        const { promisify } = await import('node:util');
-        const lookup = promisify(dns.lookup);
-
-        try {
-            const { address } = await lookup(url.hostname);
-            url.hostname = address;
-            return url.toString();
-        } catch {
-            return endpoint;
-        }
-    }
-
-    return endpoint;
-}
 
 /**
  * Find the Angrav agent frame within the Electron app
@@ -152,8 +126,9 @@ export async function main(
     webhook_url?: string
 ): Promise<{ tabId: string; status: string }> {
 
-    const resolvedEndpoint = await resolveCdpEndpoint(CDP_ENDPOINT);
-    const browser = await chromium.connectOverCDP(resolvedEndpoint);
+    // Discover endpoints via Consul/Nomad
+    const cdpEndpoint = await getCdpEndpoint('angrav');
+    const browser = await chromium.connectOverCDP(cdpEndpoint);
 
     try {
         // Get the first page (Angrav is typically a single-page Electron app)
@@ -197,7 +172,9 @@ export async function main(
         });
 
         // Inject completion observer
-        const effectiveWebhookUrl = webhook_url || OUTPUT_WEBHOOK_URL;
+        const windmillBase = await getWindmillEndpoint();
+        const defaultWebhook = `${windmillBase}/api/w/main/jobs/run_wait_result/p/f/angrav/output`;
+        const effectiveWebhookUrl = webhook_url || defaultWebhook;
         await injectCompletionObserver(page, tabId, effectiveWebhookUrl, prompt);
 
         console.log(`📤 Task submitted, tabId: ${tabId}`);
