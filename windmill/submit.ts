@@ -10,30 +10,33 @@
  *   const result = await poll({ job_id });
  */
 
-// Windmill SDK imports (available at runtime in Windmill)
-// import * as wmill from 'windmill-client';
-
 export async function main(
     prompt: string,
     context_files?: string[],
-    timeout_ms: number = 120000
+    timeout_ms: number = 120000,
+    worker_tag?: string  // Optional: specify worker group (e.g., 'server', 'ntb-local')
 ): Promise<{ job_id: string; status: string }> {
 
     // @ts-ignore - Windmill provides this globally
     const wmill = await import('windmill-client');
 
-    // Run the execute script asynchronously
-    // 'f/angrav/execute' is the path where the execute script is deployed in Windmill
-    const jobId = await wmill.runScriptAsync({
+    // Build the job options
+    const jobOptions: any = {
         path: 'f/angrav/execute',
         args: {
             prompt,
             context_files,
             timeout_ms
-        },
-        // Tag ensures it runs on the NTB worker that has access to angrav-browser
-        tag: 'ntb-local'
-    });
+        }
+    };
+
+    // Only add tag if specified (otherwise uses default worker group)
+    if (worker_tag) {
+        jobOptions.tag = worker_tag;
+    }
+
+    // Run the execute script asynchronously
+    const jobId = await wmill.runScriptAsync(jobOptions);
 
     console.log(`📋 Submitted Angrav task with job_id: ${jobId}`);
 
@@ -42,3 +45,4 @@ export async function main(
         status: 'queued'
     };
 }
+
