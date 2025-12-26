@@ -147,16 +147,11 @@ function validateMessages(messages: ChatMessage[]): string | null {
         return 'Messages array cannot be empty';
     }
 
-    // Must have at least one user message
-    const hasUserMessage = messages.some(m => m.role === 'user');
-    if (!hasUserMessage) {
-        return 'At least one user message is required';
-    }
-
+    // First pass: validate each message structure
     for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
 
-        // Check role exists and is valid
+        // Check role exists and is valid (do this FIRST)
         if (!msg.role || !validRoles.includes(msg.role)) {
             return `Invalid role '${msg.role}' at message ${i}. Must be one of: ${validRoles.join(', ')}`;
         }
@@ -170,6 +165,12 @@ function validateMessages(messages: ChatMessage[]): string | null {
         if (msg.role === 'user' && msg.content.trim().length === 0) {
             return `User message ${i} cannot have empty content`;
         }
+    }
+
+    // Second pass: check for at least one user message
+    const hasUserMessage = messages.some(m => m.role === 'user');
+    if (!hasUserMessage) {
+        return 'At least one user message is required';
     }
 
     return null; // Valid
