@@ -446,6 +446,21 @@ function handleModels(res: http.ServerResponse): void {
     sendJson(res, 200, models);
 }
 
+function handleModelById(modelId: string, res: http.ServerResponse): void {
+    // Our supported model
+    if (modelId === 'gemini-antigravity') {
+        const model: ModelInfo = {
+            id: 'gemini-antigravity',
+            object: 'model',
+            created: Math.floor(Date.now() / 1000),
+            owned_by: 'angrav'
+        };
+        sendJson(res, 200, model);
+    } else {
+        sendError(res, 404, `Model '${modelId}' not found`);
+    }
+}
+
 function handleHealth(res: http.ServerResponse): void {
     sendJson(res, 200, {
         status: 'ok',
@@ -492,6 +507,9 @@ export function startServer(options: ServerOptions): http.Server {
             handleHealth(res);
         } else if (url === '/v1/models' && method === 'GET') {
             handleModels(res);
+        } else if (url.startsWith('/v1/models/') && method === 'GET') {
+            const modelId = url.replace('/v1/models/', '');
+            handleModelById(modelId, res);
         } else if (url === '/v1/chat/completions' && method === 'POST') {
             await handleChatCompletions(req, res);
         } else {
