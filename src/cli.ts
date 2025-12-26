@@ -3,6 +3,7 @@ import { connectToApp, getAgentFrame } from './core';
 import { getAgentState, waitForIdle, StateInfo } from './state';
 import { startNewConversation, getConversationHistory, ConversationHistory } from './session';
 import { output, outputError } from './output';
+import { startServer } from './server';
 
 const program = new Command();
 
@@ -12,6 +13,18 @@ program
     .description('Antigravity Automation CLI')
     .version('0.0.1')
     .option('--json', 'Output as JSON (machine-readable)', false);
+
+// Serve command (OpenAI-compatible API server)
+program.command('serve')
+    .description('Start OpenAI-compatible API server')
+    .option('-p, --port <number>', 'Port to listen on', '8080')
+    .option('-h, --host <address>', 'Host to bind to', 'localhost')
+    .action((options) => {
+        startServer({
+            port: parseInt(options.port),
+            host: options.host
+        });
+    });
 
 program.command('status')
     .description('Get current agent state')

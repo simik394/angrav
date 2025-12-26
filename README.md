@@ -58,6 +58,30 @@ angrav manager spawn <ws> <task>  # Spawn new agent
 
 **Note:** `terminal add` without argument shows TUI arrow-key selection (humans). AI agents should use index or name.
 
+## OpenAI-Compatible API Server
+
+Start an OpenAI-compatible HTTP server to interact with Gemini via standard tools:
+
+```bash
+# Start server (default localhost:8080)
+angrav serve
+
+# Custom port/host
+angrav serve --port 3000 --host 0.0.0.0
+```
+
+**Endpoints:**
+- `GET /health` - Health check
+- `GET /v1/models` - List available models
+- `POST /v1/chat/completions` - Chat completions (OpenAI format)
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemini-antigravity","messages":[{"role":"user","content":"Hello!"}]}'
+```
+
 ## Architecture
 
 Two-container Docker setup:
@@ -77,6 +101,7 @@ See [[docker_standalone_spec|docker_standalone_spec.md]] for details.
 | Agent Manager | ✅ | `src/manager.ts` |
 | Context Injection | ✅ | `src/context.ts` |
 | Terminal Management | ✅ | `src/terminal.ts` |
+| **OpenAI API Server** | ✅ | `src/server.ts` |
 | Model Configuration | 📋 | Phase 4 |
 | Review & Execution | 📋 | Phase 5 |
 
@@ -95,4 +120,4 @@ BROWSER_CDP_ENDPOINT=http://localhost:9223 npm test
 - [[wbs|WBS & Feature Prioritization]]
 - [[docker_standalone_spec|Docker Standalone Spec]]
 - [[context_injection_spec|Context Injection Spec]]
-- [[LESSONS|Lessons Learned]]
+- [[Prods/01-pwf/agents/angrav/docs/LESSONS|Lessons Learned]]
