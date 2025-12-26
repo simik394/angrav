@@ -98,8 +98,13 @@ interface ServerState {
         resolve: (response: ChatCompletionResponse) => void;
         reject: (error: Error) => void;
         request: ChatCompletionRequest;
+        timestamp: number; // When request was queued
     }>;
 }
+
+// Queue configuration
+const MAX_QUEUE_DEPTH = 10;
+const QUEUE_TIMEOUT_MS = 120000; // 2 minutes
 
 const state: ServerState = {
     appContext: null,
@@ -212,7 +217,18 @@ async function processQueue(): Promise<void> {
 
 function queueRequest(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     return new Promise((resolve, reject) => {
-        state.requestQueue.push({ resolve, reject, request });
+        // Check queue depth limit
+        if (state.requestQueue.length >= MAX_QUEUE_DEPTH) {
+            reject(new Error(`Queue full (max ${MAX_QUEUE_DEPTH} requests). Try again later.`));
+            return;
+        }
+
+        state.requestQueue.push({
+            resolve,
+            reject,
+            request,
+            timestamp: Date.now()
+        });
         processQueue();
     });
 }
@@ -382,7 +398,8 @@ async function handleStreamingChatCompletions(
         state.requestQueue.push({
             resolve: () => { /* handled above */ },
             reject: () => { /* handled above */ },
-            request
+            request,
+            timestamp: Date.now()
         });
 
         // Check if we can process immediately
@@ -433,8 +450,11 @@ function handleHealth(res: http.ServerResponse): void {
     sendJson(res, 200, {
         status: 'ok',
         connected: state.appContext !== null,
-        queueLength: state.requestQueue.length,
-        isProcessing: state.isProcessing
+        queue: {
+            length: state.requestQueue.length,
+            maxDepth: MAX_QUEUE_DEPTH,
+            isProcessing: state.isProcessing
+        }
     });
 }
 
