@@ -117,6 +117,19 @@ function generateId(): string {
     return 'chatcmpl-' + Math.random().toString(36).substring(2, 15);
 }
 
+/**
+ * Format all messages into a single conversation string for the agent.
+ * Uses a simple "Role: content" format with separators.
+ */
+function formatConversation(messages: ChatMessage[]): string {
+    return messages
+        .map(m => {
+            const role = m.role.charAt(0).toUpperCase() + m.role.slice(1);
+            return `${role}: ${m.content}`;
+        })
+        .join('\n\n---\n\n');
+}
+
 async function ensureConnection(): Promise<{ frame: Frame; page: Page }> {
     if (!state.appContext || !state.frame || !state.page) {
         console.log('🔌 Establishing CDP connection...');
@@ -134,14 +147,8 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
     // Start observability trace
     const traceCtx = startChatCompletionTrace(request);
 
-    // Extract the last user message
-    const userMessages = request.messages.filter(m => m.role === 'user');
-    if (userMessages.length === 0) {
-        const error = new Error('No user message found in request');
-        failChatCompletionTrace(traceCtx, error);
-        throw error;
-    }
-    const prompt = userMessages[userMessages.length - 1].content;
+    // Format full conversation for multi-turn context
+    const prompt = formatConversation(request.messages);
 
     console.log(`📨 Processing: "${prompt.substring(0, 50)}..."`);
 
