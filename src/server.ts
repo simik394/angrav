@@ -5,6 +5,16 @@ import { waitForIdle } from './state';
 import { extractResponse, AgentResponse } from './extraction';
 import { streamResponse, StreamChunk } from './streaming';
 import { Frame, Page } from '@playwright/test';
+import {
+    startChatCompletionTrace,
+    completeChatCompletionTrace,
+    failChatCompletionTrace,
+    trackStreamingChunk,
+    flushObservability,
+    shutdownObservability,
+    isObservabilityEnabled,
+    TraceContext
+} from './observability';
 
 // ============================================================================
 // OpenAI-Compatible Types
@@ -121,44 +131,56 @@ async function ensureConnection(): Promise<{ frame: Frame; page: Page }> {
 async function processRequest(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     const { frame, page } = await ensureConnection();
 
+    // Start observability trace
+    const traceCtx = startChatCompletionTrace(request);
+
     // Extract the last user message
     const userMessages = request.messages.filter(m => m.role === 'user');
     if (userMessages.length === 0) {
-        throw new Error('No user message found in request');
+        const error = new Error('No user message found in request');
+        failChatCompletionTrace(traceCtx, error);
+        throw error;
     }
     const prompt = userMessages[userMessages.length - 1].content;
 
     console.log(`📨 Processing: "${prompt.substring(0, 50)}..."`);
 
-    // Send prompt and wait for response
-    await sendPrompt(frame, page, prompt, { wait: true, timeout: 300000 }); // 5 min timeout
+    try {
+        // Send prompt and wait for response
+        await sendPrompt(frame, page, prompt, { wait: true, timeout: 300000 }); // 5 min timeout
 
-    // Extract response
-    const agentResponse = await extractResponse(frame);
+        // Extract response
+        const agentResponse = await extractResponse(frame);
 
-    // Build OpenAI-compatible response
-    const response: ChatCompletionResponse = {
-        id: generateId(),
-        object: 'chat.completion',
-        created: Math.floor(Date.now() / 1000),
-        model: request.model || 'gemini-antigravity',
-        choices: [{
-            index: 0,
-            message: {
-                role: 'assistant',
-                content: agentResponse.fullText
-            },
-            finish_reason: 'stop'
-        }],
-        usage: {
-            prompt_tokens: 0, // Not available from Antigravity
-            completion_tokens: 0,
-            total_tokens: 0
-        }
-    };
+        // Complete observability trace
+        completeChatCompletionTrace(traceCtx, agentResponse.fullText);
 
-    console.log(`✅ Response ready (${agentResponse.fullText.length} chars)`);
-    return response;
+        // Build OpenAI-compatible response
+        const response: ChatCompletionResponse = {
+            id: generateId(),
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: request.model || 'gemini-antigravity',
+            choices: [{
+                index: 0,
+                message: {
+                    role: 'assistant',
+                    content: agentResponse.fullText
+                },
+                finish_reason: 'stop'
+            }],
+            usage: {
+                prompt_tokens: Math.ceil(prompt.length / 4),
+                completion_tokens: Math.ceil(agentResponse.fullText.length / 4),
+                total_tokens: Math.ceil((prompt.length + agentResponse.fullText.length) / 4)
+            }
+        };
+
+        return response;
+    } catch (error) {
+        failChatCompletionTrace(traceCtx, error as Error);
+        throw error;
+    }
 }
 
 async function processQueue(): Promise<void> {
@@ -471,6 +493,8 @@ export function startServer(options: ServerOptions): http.Server {
     // Cleanup on shutdown
     process.on('SIGINT', async () => {
         console.log('\n🛑 Shutting down...');
+        await flushObservability();
+        await shutdownObservability();
         if (state.appContext) {
             await state.appContext.browser.close();
         }
