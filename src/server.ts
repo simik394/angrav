@@ -3,6 +3,7 @@ import { connectToApp, getAgentFrame, AppContext } from './core';
 import { sendPrompt } from './prompt';
 import { waitForIdle } from './state';
 import { extractResponse, AgentResponse } from './extraction';
+import { streamResponse, StreamChunk } from './streaming';
 import { Frame, Page } from '@playwright/test';
 
 // ============================================================================
@@ -54,6 +55,24 @@ export interface ModelInfo {
 export interface ModelsResponse {
     object: 'list';
     data: ModelInfo[];
+}
+
+// SSE Streaming Types
+export interface ChatCompletionChunkChoice {
+    index: number;
+    delta: {
+        role?: 'assistant';
+        content?: string;
+    };
+    finish_reason: 'stop' | 'length' | null;
+}
+
+export interface ChatCompletionChunk {
+    id: string;
+    object: 'chat.completion.chunk';
+    created: number;
+    model: string;
+    choices: ChatCompletionChunkChoice[];
 }
 
 // ============================================================================
@@ -211,7 +230,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
     }
 
     if (request.stream) {
-        sendError(res, 501, 'Streaming is not supported yet');
+        await handleStreamingChatCompletions(request, res);
         return;
     }
 
@@ -222,6 +241,150 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
         console.error('❌ Request failed:', error);
         sendError(res, 500, (error as Error).message);
     }
+}
+
+/**
+ * Handles streaming chat completions via Server-Sent Events (SSE).
+ * IMPORTANT: Uses queue to ensure sequential processing (human-like behavior).
+ * Only ONE interaction at a time - reading DOM is passive/read-only.
+ */
+async function handleStreamingChatCompletions(
+    request: ChatCompletionRequest,
+    res: http.ServerResponse
+): Promise<void> {
+    // Set up SSE headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+    });
+
+    const id = generateId();
+    const model = request.model || 'gemini-antigravity';
+    const created = Math.floor(Date.now() / 1000);
+
+    // Helper to send SSE chunk
+    const sendSSE = (data: ChatCompletionChunk | '[DONE]') => {
+        if (data === '[DONE]') {
+            res.write('data: [DONE]\n\n');
+        } else {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+        }
+    };
+
+    // Queue this streaming request (still sequential!)
+    return new Promise((resolve, reject) => {
+        const processStreaming = async () => {
+            try {
+                const { frame, page } = await ensureConnection();
+
+                // Extract prompt
+                const userMessages = request.messages.filter(m => m.role === 'user');
+                if (userMessages.length === 0) {
+                    throw new Error('No user message found');
+                }
+                const prompt = userMessages[userMessages.length - 1].content;
+
+                console.log(`📡 Streaming request: "${prompt.substring(0, 50)}..."`);
+
+                // Send initial role chunk
+                sendSSE({
+                    id,
+                    object: 'chat.completion.chunk',
+                    created,
+                    model,
+                    choices: [{
+                        index: 0,
+                        delta: { role: 'assistant' },
+                        finish_reason: null
+                    }]
+                });
+
+                // Send prompt (NOT waiting - we'll stream the response)
+                await sendPrompt(frame, page, prompt, { wait: false });
+
+                // Stream response via DOM polling
+                await streamResponse(frame, (chunk: StreamChunk) => {
+                    if (chunk.content) {
+                        sendSSE({
+                            id,
+                            object: 'chat.completion.chunk',
+                            created,
+                            model,
+                            choices: [{
+                                index: 0,
+                                delta: { content: chunk.content },
+                                finish_reason: chunk.isComplete ? 'stop' : null
+                            }]
+                        });
+                    }
+
+                    if (chunk.isComplete) {
+                        sendSSE('[DONE]');
+                    }
+                });
+
+                res.end();
+                console.log('✅ Streaming complete');
+                resolve();
+            } catch (error) {
+                console.error('❌ Streaming failed:', error);
+                // Send error as final chunk
+                sendSSE({
+                    id,
+                    object: 'chat.completion.chunk',
+                    created,
+                    model,
+                    choices: [{
+                        index: 0,
+                        delta: { content: `\n\n[ERROR: ${(error as Error).message}]` },
+                        finish_reason: 'stop'
+                    }]
+                });
+                sendSSE('[DONE]');
+                res.end();
+                // Resolve (not reject) since we already sent the error via SSE
+                resolve();
+            }
+        };
+
+        // Add to queue for sequential processing
+        state.requestQueue.push({
+            resolve: () => { /* handled above */ },
+            reject: () => { /* handled above */ },
+            request
+        });
+
+        // Check if we can process immediately
+        if (!state.isProcessing) {
+            state.isProcessing = true;
+            state.requestQueue.pop(); // Remove from queue, we're handling it
+            processStreaming().finally(() => {
+                state.isProcessing = false;
+                processQueue(); // Process next in queue
+            });
+        } else {
+            // Wait in queue - will be processed when current finishes
+            // Note: This simplified queue doesn't fully support streaming queuing
+            // For now, reject if busy
+            state.requestQueue.pop();
+            sendSSE({
+                id,
+                object: 'chat.completion.chunk',
+                created,
+                model,
+                choices: [{
+                    index: 0,
+                    delta: { content: '[Server busy - try again]' },
+                    finish_reason: 'stop'
+                }]
+            });
+            sendSSE('[DONE]');
+            res.end();
+            resolve();
+        }
+    });
 }
 
 function handleModels(res: http.ServerResponse): void {

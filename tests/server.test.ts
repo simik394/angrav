@@ -117,18 +117,38 @@ test.describe('Chat Completions Endpoint', () => {
         });
     });
 
-    test('POST /v1/chat/completions rejects streaming requests', async () => {
-        const { status, data } = await httpRequest('POST', '/v1/chat/completions', {
-            model: 'gemini-antigravity',
-            messages: [{ role: 'user', content: 'Hello' }],
-            stream: true
-        });
+    test('POST /v1/chat/completions with stream:true returns SSE format', async () => {
+        // Streaming is now supported - verify it returns SSE headers
+        const url = new URL('/v1/chat/completions', SERVER_URL);
 
-        expect(status).toBe(501);
-        expect(data).toMatchObject({
-            error: expect.objectContaining({
-                message: expect.stringContaining('Streaming')
-            })
+        await new Promise<void>((resolve, reject) => {
+            const req = http.request({
+                hostname: url.hostname,
+                port: url.port,
+                path: url.pathname,
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }, (res) => {
+                expect(res.statusCode).toBe(200);
+                expect(res.headers['content-type']).toBe('text/event-stream');
+
+                let data = '';
+                res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+                res.on('end', () => {
+                    // Should contain SSE format with [DONE] terminator
+                    expect(data).toContain('data:');
+                    expect(data).toContain('[DONE]');
+                    resolve();
+                });
+            });
+
+            req.on('error', reject);
+            req.write(JSON.stringify({
+                model: 'gemini-antigravity',
+                messages: [{ role: 'user', content: 'test' }],
+                stream: true
+            }));
+            req.end();
         });
     });
 
