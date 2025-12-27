@@ -4,7 +4,8 @@ import { sendPrompt } from './prompt';
 import { waitForIdle } from './state';
 import { extractResponse, AgentResponse } from './extraction';
 import { streamResponse, StreamChunk } from './streaming';
-import { startNewConversation } from './session';
+import { startNewConversation, switchSession, listSessions } from './session';
+import { openAgentManager, ManagerContext } from './manager';
 import { Frame, Page } from '@playwright/test';
 import {
     startChatCompletionTrace,
@@ -96,6 +97,7 @@ interface ServerState {
     appContext: AppContext | null;
     frame: Frame | null;
     page: Page | null;
+    managerContext: ManagerContext | null;  // For session switching
     isProcessing: boolean;
     currentSession: string | null;  // Track current session
     requestQueue: Array<{
@@ -114,6 +116,7 @@ const state: ServerState = {
     appContext: null,
     frame: null,
     page: null,
+    managerContext: null,
     isProcessing: false,
     currentSession: null,
     requestQueue: []
@@ -203,10 +206,31 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
             await startNewConversation(frame);
             state.currentSession = null;
         } else if (request.session !== state.currentSession) {
-            // Different session requested - log it (full switching requires manager frame)
-            console.log(`📝 Session requested: ${request.session} (current: ${state.currentSession || 'default'})`);
-            // For now, just track it - full session switching would require opening Agent Manager
-            state.currentSession = request.session;
+            // Different session requested - use Agent Manager for full switching
+            console.log(`🔄 Switching to session: ${request.session}`);
+            try {
+                // Ensure we have manager context
+                if (!state.managerContext && state.appContext) {
+                    state.managerContext = await openAgentManager(state.appContext.context);
+                }
+
+                if (state.managerContext) {
+                    const switched = await switchSession(state.managerContext.frame, request.session);
+                    if (switched) {
+                        state.currentSession = request.session;
+                        // Re-acquire agent frame after session switch
+                        state.frame = await getAgentFrame(state.page!);
+                    } else {
+                        console.warn(`⚠️ Session '${request.session}' not found, using current session`);
+                    }
+                } else {
+                    console.warn('⚠️ Could not open Agent Manager for session switching');
+                    state.currentSession = request.session;
+                }
+            } catch (e) {
+                console.warn(`⚠️ Session switch failed: ${e}, continuing with current session`);
+                state.currentSession = request.session;
+            }
         }
     }
 
