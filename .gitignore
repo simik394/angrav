@@ -3,3 +3,6 @@ test-results/
 .playwright/
 *.png
 *.html
+*.log
+dist/
+docker/workspace/
