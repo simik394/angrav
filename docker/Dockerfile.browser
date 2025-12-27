@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
     procps \
+    xdotool \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Antigravity (Google's VS Codium fork)
@@ -58,6 +59,10 @@ RUN chmod 4755 /usr/share/antigravity/chrome-sandbox 2>/dev/null || true
 
 # Supervisord config
 COPY docker/supervisord-browser.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Fluxbox window manager config (maximize Antigravity on startup)
+RUN mkdir -p /home/angrav/.fluxbox && chown -R angrav:angrav /home/angrav/.fluxbox
+COPY docker/fluxbox-apps /home/angrav/.fluxbox/apps
 
 # Startup script
 COPY docker/start-browser.sh /start-browser.sh

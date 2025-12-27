@@ -1,0 +1,7 @@
+# Fluxbox apps configuration
+# Auto-maximize Antigravity window on startup
+
+[app] (name=antigravity)
+  [Maximized] {yes}
+  [Position] (TOPLEFT) {0 0}
+[end]
