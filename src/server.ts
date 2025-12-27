@@ -526,6 +526,46 @@ async function handleStreamingChatCompletions(
     });
 }
 
+// Handler for listing sessions
+async function handleSessions(res: http.ServerResponse): Promise<void> {
+    try {
+        console.log('📋 GET /v1/sessions requested');
+        // Ensure connection
+        if (!state.appContext) {
+            state.appContext = await connectToApp();
+            state.page = state.appContext.page;
+        }
+
+        // Open/Ensure Agent Manager is available for full session list
+        if (!state.managerContext) {
+            try {
+                // Try to get manager context if available
+                state.managerContext = await openAgentManager(state.appContext.context);
+            } catch (e) {
+                console.warn('⚠️ Could not open Agent Manager:', e);
+                // Fallback: try to list from current frame if possible? No, listSessions requires manager frame
+                throw new Error('Agent Manager unavailable for listing sessions');
+            }
+        }
+
+        const sessions = await listSessions(state.managerContext.frame);
+
+        sendJson(res, 200, {
+            object: 'list',
+            data: sessions.map(s => ({
+                id: s.id || `session-${s.index}`, // Fallback ID if none found
+                name: s.name,
+                object: 'session',
+                created: Math.floor(Date.now() / 1000), // Placeholder
+                owned_by: 'antigravity'
+            }))
+        });
+    } catch (error: any) {
+        console.error('❌ Failed to list sessions:', error);
+        sendError(res, 500, error.message || 'Failed to list sessions');
+    }
+}
+
 function handleModels(res: http.ServerResponse): void {
     const models: ModelsResponse = {
         object: 'list',
@@ -600,6 +640,8 @@ export function startServer(options: ServerOptions): http.Server {
             handleHealth(res);
         } else if (url === '/v1/models' && method === 'GET') {
             handleModels(res);
+        } else if (url === '/v1/sessions' && method === 'GET') {
+            await handleSessions(res);
         } else if (url.startsWith('/v1/models/') && method === 'GET') {
             const modelId = url.replace('/v1/models/', '');
             handleModelById(modelId, res);
@@ -619,6 +661,7 @@ export function startServer(options: ServerOptions): http.Server {
    Endpoints:
    - GET  /health              Health check
    - GET  /v1/models           List models
+   - GET  /v1/sessions         List sessions
    - POST /v1/chat/completions Chat completions
    
    Usage example:
