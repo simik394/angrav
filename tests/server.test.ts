@@ -60,8 +60,10 @@ test.describe('Health Endpoint', () => {
         expect(data).toMatchObject({
             status: 'ok',
             connected: expect.any(Boolean),
-            queueLength: expect.any(Number),
-            isProcessing: expect.any(Boolean)
+            queue: {
+                length: expect.any(Number),
+                isProcessing: expect.any(Boolean)
+            }
         });
     });
 });
