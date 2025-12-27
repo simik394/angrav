@@ -4,6 +4,7 @@ import { sendPrompt } from './prompt';
 import { waitForIdle } from './state';
 import { extractResponse, AgentResponse } from './extraction';
 import { streamResponse, StreamChunk } from './streaming';
+import { startNewConversation } from './session';
 import { Frame, Page } from '@playwright/test';
 import {
     startChatCompletionTrace,
@@ -31,6 +32,7 @@ export interface ChatCompletionRequest {
     temperature?: number;
     max_tokens?: number;
     stream?: boolean;
+    session?: string;  // Session name for conversation continuity
 }
 
 export interface ChatCompletionChoice {
@@ -53,6 +55,7 @@ export interface ChatCompletionResponse {
         completion_tokens: number;
         total_tokens: number;
     };
+    session?: string;  // Echo session for client tracking
 }
 
 export interface ModelInfo {
@@ -94,6 +97,7 @@ interface ServerState {
     frame: Frame | null;
     page: Page | null;
     isProcessing: boolean;
+    currentSession: string | null;  // Track current session
     requestQueue: Array<{
         resolve: (response: ChatCompletionResponse) => void;
         reject: (error: Error) => void;
@@ -111,6 +115,7 @@ const state: ServerState = {
     frame: null,
     page: null,
     isProcessing: false,
+    currentSession: null,
     requestQueue: []
 };
 
@@ -190,6 +195,21 @@ async function ensureConnection(): Promise<{ frame: Frame; page: Page }> {
 async function processRequest(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     const { frame, page } = await ensureConnection();
 
+    // Handle session switching
+    if (request.session) {
+        if (request.session === 'new') {
+            // Start fresh conversation
+            console.log('🔄 Starting new conversation for session: new');
+            await startNewConversation(frame);
+            state.currentSession = null;
+        } else if (request.session !== state.currentSession) {
+            // Different session requested - log it (full switching requires manager frame)
+            console.log(`📝 Session requested: ${request.session} (current: ${state.currentSession || 'default'})`);
+            // For now, just track it - full session switching would require opening Agent Manager
+            state.currentSession = request.session;
+        }
+    }
+
     // Start observability trace
     const traceCtx = startChatCompletionTrace(request);
 
@@ -226,7 +246,8 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
                 prompt_tokens: Math.ceil(prompt.length / 4),
                 completion_tokens: Math.ceil(agentResponse.fullText.length / 4),
                 total_tokens: Math.ceil((prompt.length + agentResponse.fullText.length) / 4)
-            }
+            },
+            session: request.session || state.currentSession || undefined
         };
 
         return response;
