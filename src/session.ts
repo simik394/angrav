@@ -102,6 +102,7 @@ export async function getConversationHistory(frame: Frame): Promise<Conversation
 export interface SessionInfo {
     name: string;
     index: number;
+    id?: string; // Stable ID if available
 }
 
 /**
@@ -114,7 +115,6 @@ export async function listSessions(managerFrame: Frame): Promise<SessionInfo[]> 
     const sessions: SessionInfo[] = [];
 
     // Sessions are buttons in the manager with conversation titles
-    // Based on exploration: buttons with non-menu text (not File/Edit/View etc)
     const buttons = managerFrame.locator('button:visible');
     const count = await buttons.count();
 
@@ -128,29 +128,48 @@ export async function listSessions(managerFrame: Frame): Promise<SessionInfo[]> 
         // Skip menu items and empty
         if (!trimmed || menuItems.includes(trimmed)) continue;
 
-        // Skip very short texts (likely icons)
+        // Skip very short texts (likely icons) unless they look like IDs
         if (trimmed.length < 5) continue;
 
-        sessions.push({ name: trimmed, index: i });
+        // Try to find stable ID
+        // Check common data attributes
+        const dataId = await btn.getAttribute('data-id').catch(() => null);
+        const dataSessionId = await btn.getAttribute('data-session-id').catch(() => null);
+        const dataTaskId = await btn.getAttribute('data-task-id').catch(() => null);
+        const idAttr = await btn.getAttribute('id').catch(() => null);
+
+        // Also check parent/closest container for ID if button doesn't have it
+        // (Sometimes the button is inside a wrapper with the ID)
+
+        const id = dataId || dataSessionId || dataTaskId || idAttr;
+
+        sessions.push({ name: trimmed, index: i, id: id || undefined });
     }
 
-    console.log(`Found ${sessions.length} sessions.`);
+    console.log(`Found ${sessions.length} sessions:`);
+    sessions.forEach(s => console.log(`  - "${s.name}" (ID: ${s.id || 'none'})`));
+
     return sessions;
 }
 
 /**
- * Switches to a session by name (partial match).
+ * Switches to a session by ID (exact match) or name (partial match).
  */
-export async function switchSession(managerFrame: Frame, sessionName: string): Promise<boolean> {
-    console.log(`🔄 Switching to session: ${sessionName}...`);
+export async function switchSession(managerFrame: Frame, sessionIdOrName: string): Promise<boolean> {
+    console.log(`🔄 Switching to session: ${sessionIdOrName}...`);
 
     const sessions = await listSessions(managerFrame);
-    const match = sessions.find(s =>
-        s.name.toLowerCase().includes(sessionName.toLowerCase())
-    );
+
+    // Priority 1: Match by ID (exact)
+    let match = sessions.find(s => s.id === sessionIdOrName);
+
+    // Priority 2: Match by name (partial)
+    if (!match) {
+        match = sessions.find(s => s.name.toLowerCase().includes(sessionIdOrName.toLowerCase()));
+    }
 
     if (!match) {
-        console.error(`Session "${sessionName}" not found.`);
+        console.error(`Session "${sessionIdOrName}" not found (checked ${sessions.length} sessions).`);
         return false;
     }
 
@@ -159,7 +178,7 @@ export async function switchSession(managerFrame: Frame, sessionName: string): P
     await btn.click();
     await managerFrame.waitForTimeout(500);
 
-    console.log(`✅ Switched to: ${match.name}`);
+    console.log(`✅ Switched to: "${match.name}" (ID: ${match.id || 'none'})`);
     return true;
 }
 
