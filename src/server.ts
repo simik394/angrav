@@ -7,6 +7,7 @@ import { streamResponse, StreamChunk } from './streaming';
 import { startNewConversation, switchSession, listSessions } from './session';
 import { openAgentManager, ManagerContext } from './manager';
 import { Frame, Page } from '@playwright/test';
+import { getFalkorClient } from '@agents/shared';
 import {
     startChatCompletionTrace,
     completeChatCompletionTrace,
@@ -243,11 +244,23 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
     console.log(`📨 Processing: "${prompt.substring(0, 50)}..."`);
 
     try {
+        const falkor = getFalkorClient();
+
+        // Log query to FalkorDB
+        if (state.currentSession) {
+            await falkor.logInteraction(state.currentSession, 'user', 'query', prompt).catch((e: any) => console.error('FalkorDB log failed:', e));
+        }
+
         // Send prompt and wait for response
         await sendPrompt(frame, page, prompt, { wait: true, timeout: 300000 }); // 5 min timeout
 
         // Extract response
         const agentResponse = await extractResponse(frame);
+
+        // Log response to FalkorDB
+        if (state.currentSession) {
+            await falkor.logInteraction(state.currentSession, 'agent', 'response', agentResponse.fullText).catch((e: any) => console.error('FalkorDB log failed:', e));
+        }
 
         // Complete observability trace
         completeChatCompletionTrace(traceCtx, agentResponse.fullText);

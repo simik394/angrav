@@ -12,6 +12,7 @@ import { connectToApp, getAgentFrame } from './src/core';
 import { sendPrompt } from './src/prompt';
 import { waitForIdle } from './src/state';
 import { extractResponse } from './src/extraction';
+import { dismissAllPopups } from './src/dismiss-popups';
 
 const TASKS_DIR = '/workspace/tasks';
 const OUTPUT_DIR = '/workspace/output';
@@ -147,6 +148,14 @@ async function watchTasks(): Promise<void> {
     // Wait for Antigravity to be ready
     console.log('⏳ Waiting for Antigravity to start...');
     await new Promise(resolve => setTimeout(resolve, 10000));
+
+    // Dismiss any startup popups
+    console.log('🧹 Dismissing startup popups...');
+    try {
+        await dismissAllPopups();
+    } catch (e) {
+        console.warn('⚠️ Could not dismiss popups:', e);
+    }
 
     while (true) {
         try {

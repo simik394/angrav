@@ -1,4 +1,5 @@
 import { Frame } from '@playwright/test';
+import { getFalkorClient, Session as FalkorSession } from '@agents/shared';
 
 export interface ConversationMessage {
     role: 'user' | 'agent';
@@ -108,46 +109,119 @@ export interface SessionInfo {
 /**
  * Lists all available sessions from the Agent Manager window.
  * Sessions appear as buttons with conversation titles.
+ * Syncs with FalkorDB to provide stable UUIDs.
  */
-export async function listSessions(managerFrame: Frame): Promise<SessionInfo[]> {
+export async function listSessions(managerFrame: Frame, workspace: string = 'workspace'): Promise<SessionInfo[]> {
     console.log('📋 Listing sessions...');
 
-    const sessions: SessionInfo[] = [];
+    // Get sessions from UI
+    const uiSessions = await getSessionsFromUI(managerFrame);
 
-    // Sessions are buttons in the manager with conversation titles
-    const buttons = managerFrame.locator('button:visible');
-    const count = await buttons.count();
+    // Sync with FalkorDB for stable IDs
+    const falkor = getFalkorClient();
+    const dbSessions = await falkor.listSessions(workspace);
 
-    const menuItems = ['File', 'Edit', 'View', 'Antigravity'];
+    // Merge: UI is source of truth for available sessions, DB for IDs
+    const result: SessionInfo[] = [];
 
-    for (let i = 0; i < count; i++) {
-        const btn = buttons.nth(i);
-        const text = await btn.innerText().catch(() => '');
-        const trimmed = text.trim();
+    for (const ui of uiSessions) {
+        // Try to find existing session in DB by name
+        let dbSession = dbSessions.find(s => s.name === ui.name);
 
-        // Skip menu items and empty
-        if (!trimmed || menuItems.includes(trimmed)) continue;
-
-        // Skip very short texts (likely icons) unless they look like IDs
-        if (trimmed.length < 5) continue;
-
-        // Try to find stable ID
-        // Check common data attributes
-        const dataId = await btn.getAttribute('data-id').catch(() => null);
-        const dataSessionId = await btn.getAttribute('data-session-id').catch(() => null);
-        const dataTaskId = await btn.getAttribute('data-task-id').catch(() => null);
-        const idAttr = await btn.getAttribute('id').catch(() => null);
-
-        // Also check parent/closest container for ID if button doesn't have it
-        // (Sometimes the button is inside a wrapper with the ID)
-
-        const id = dataId || dataSessionId || dataTaskId || idAttr;
-
-        sessions.push({ name: trimmed, index: i, id: id || undefined });
+        if (dbSession) {
+            // Session exists in DB - use its stable ID
+            result.push({ ...ui, id: dbSession.id });
+            // Update name if it changed
+            if (dbSession.name !== ui.name) {
+                await falkor.updateSessionName(dbSession.id, ui.name);
+            }
+        } else {
+            // New session - create in DB with stable UUID
+            const id = await falkor.createSession(ui.name, workspace);
+            result.push({ ...ui, id });
+        }
     }
 
-    console.log(`Found ${sessions.length} sessions:`);
-    sessions.forEach(s => console.log(`  - "${s.name}" (ID: ${s.id || 'none'})`));
+    console.log(`Found ${result.length} sessions:`);
+    result.forEach(s => console.log(`  - "${s.name}" (ID: ${s.id || 'none'})`));
+
+    return result;
+}
+
+/**
+ * Helper: Extract sessions from UI without FalkorDB sync.
+ * Based on DOM analysis: Sessions are in sidebar under "Workspaces > workspace"
+ * Structure: div[style*="padding-left: 30px"] > div > button > span.text-sm.grow.truncate
+ */
+async function getSessionsFromUI(managerFrame: Frame): Promise<SessionInfo[]> {
+    const sessions: SessionInfo[] = [];
+
+    // Debug: log frame URL to verify we're on the right page
+    const frameUrl = await managerFrame.url();
+    console.log(`  Frame URL: ${frameUrl.slice(0, 80)}...`);
+
+    // Skip patterns - items that are UI elements, not sessions
+    const skipPatterns = ['Start', 'New', 'Open', 'workspace', 'Inbox', 'Playground',
+        'Knowledge', 'Browser', 'Settings', 'File', 'Edit', 'View',
+        'Agent Manager', 'project', 'Recent', 'Active'];
+
+    // Strategy 1: Session names are in span.grow.truncate inside buttons (from DOM analysis)
+    let elements = managerFrame.locator('button span.grow.truncate');
+    let count = await elements.count();
+    console.log(`  Selector 'button span.grow.truncate': ${count} matches`);
+
+    if (count > 0) {
+        for (let i = 0; i < count; i++) {
+            const el = elements.nth(i);
+            const text = await el.innerText().catch(() => '');
+            const trimmed = text.trim();
+
+            if (trimmed.length >= 3 && !skipPatterns.some(p => trimmed === p)) {
+                if (!sessions.find(s => s.name === trimmed)) {
+                    sessions.push({ name: trimmed, index: sessions.length });
+                }
+            }
+        }
+    }
+
+    // Strategy 2: Try span.text-sm.truncate if first didn't work
+    if (sessions.length === 0) {
+        elements = managerFrame.locator('span.text-sm.truncate');
+        count = await elements.count();
+        console.log(`  Selector 'span.text-sm.truncate': ${count} matches`);
+
+        for (let i = 0; i < count; i++) {
+            const el = elements.nth(i);
+            const text = await el.innerText().catch(() => '');
+            const trimmed = text.trim();
+
+            if (trimmed.length >= 5 && !skipPatterns.some(p => trimmed.toLowerCase().includes(p.toLowerCase()))) {
+                if (!sessions.find(s => s.name === trimmed)) {
+                    sessions.push({ name: trimmed, index: sessions.length });
+                }
+            }
+        }
+    }
+
+    // Strategy 3: Fallback - visible buttons with longer text
+    if (sessions.length === 0) {
+        console.log('  Trying fallback button:visible selector...');
+        elements = managerFrame.locator('button:visible');
+        count = await elements.count();
+        console.log(`  Found ${count} visible buttons`);
+
+        for (let i = 0; i < count; i++) {
+            const btn = elements.nth(i);
+            const text = await btn.innerText().catch(() => '');
+            const trimmed = text.trim().split('\n')[0]; // First line only
+
+            if (trimmed.length >= 8 && !skipPatterns.some(p => trimmed.toLowerCase().includes(p.toLowerCase()))) {
+                if (!sessions.find(s => s.name === trimmed)) {
+                    sessions.push({ name: trimmed, index: i });
+                }
+            }
+        }
+    }
 
     return sessions;
 }
