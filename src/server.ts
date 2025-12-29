@@ -8,6 +8,8 @@ import { startNewConversation, switchSession, listSessions } from './session';
 import { openAgentManager, ManagerContext } from './manager';
 import { Frame, Page } from '@playwright/test';
 import { getFalkorClient } from '@agents/shared';
+import { SessionRegistry, SessionId, SessionHandle } from './registry';
+import { createSessionEventStream } from './session-stream';
 import {
     startChatCompletionTrace,
     completeChatCompletionTrace,
@@ -91,37 +93,45 @@ export interface ChatCompletionChunk {
 }
 
 // ============================================================================
-// Server State
+// Server State (Multi-Session)
 // ============================================================================
+
+interface RequestQueueItem {
+    resolve: (response: ChatCompletionResponse) => void;
+    reject: (error: Error) => void;
+    request: ChatCompletionRequest;
+    timestamp: number;
+}
+
+interface SessionQueueState {
+    isProcessing: boolean;
+    queue: RequestQueueItem[];
+}
 
 interface ServerState {
     appContext: AppContext | null;
-    frame: Frame | null;
-    page: Page | null;
-    managerContext: ManagerContext | null;  // For session switching
-    isProcessing: boolean;
-    currentSession: string | null;  // Track current session
-    requestQueue: Array<{
-        resolve: (response: ChatCompletionResponse) => void;
-        reject: (error: Error) => void;
-        request: ChatCompletionRequest;
-        timestamp: number; // When request was queued
-    }>;
+    registry: SessionRegistry | null;
+    managerContext: ManagerContext | null;
+    sessionQueues: Map<SessionId, SessionQueueState>;
+    // Fallback for single-session mode
+    defaultFrame: Frame | null;
+    defaultPage: Page | null;
 }
 
 // Queue configuration
-const MAX_QUEUE_DEPTH = 10;
+const MAX_QUEUE_DEPTH_PER_SESSION = 5;
+const MAX_TOTAL_QUEUE_DEPTH = 20;
 const QUEUE_TIMEOUT_MS = 120000; // 2 minutes
 
 const state: ServerState = {
     appContext: null,
-    frame: null,
-    page: null,
+    registry: null,
     managerContext: null,
-    isProcessing: false,
-    currentSession: null,
-    requestQueue: []
+    sessionQueues: new Map(),
+    defaultFrame: null,
+    defaultPage: null
 };
+
 
 // ============================================================================
 // Core Functions
@@ -185,54 +195,95 @@ function validateMessages(messages: ChatMessage[]): string | null {
     return null; // Valid
 }
 
-async function ensureConnection(): Promise<{ frame: Frame; page: Page }> {
-    if (!state.appContext || !state.frame || !state.page) {
+async function ensureConnection(): Promise<{ registry: SessionRegistry; context: AppContext }> {
+    if (!state.appContext || !state.registry) {
         console.log('🔌 Establishing CDP connection...');
         state.appContext = await connectToApp();
-        state.page = state.appContext.page;
-        state.frame = await getAgentFrame(state.page);
-        console.log('✅ Connected to Antigravity');
+        state.registry = new SessionRegistry(state.appContext.context);
+        await state.registry.discover();
+        state.registry.startPolling(2000);
+        console.log(`✅ Connected to Antigravity (${state.registry.size} sessions found)`);
     }
-    return { frame: state.frame, page: state.page };
+    return { registry: state.registry, context: state.appContext };
 }
 
-async function processRequest(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
-    const { frame, page } = await ensureConnection();
+/**
+ * Gets or creates queue state for a session.
+ */
+function getSessionQueue(sessionId: SessionId): SessionQueueState {
+    let queueState = state.sessionQueues.get(sessionId);
+    if (!queueState) {
+        queueState = { isProcessing: false, queue: [] };
+        state.sessionQueues.set(sessionId, queueState);
+    }
+    return queueState;
+}
 
-    // Handle session switching
-    if (request.session) {
-        if (request.session === 'new') {
-            // Start fresh conversation
-            console.log('🔄 Starting new conversation for session: new');
-            await startNewConversation(frame);
-            state.currentSession = null;
-        } else if (request.session !== state.currentSession) {
-            // Different session requested - use Agent Manager for full switching
-            console.log(`🔄 Switching to session: ${request.session}`);
-            try {
-                // Ensure we have manager context
-                if (!state.managerContext && state.appContext) {
-                    state.managerContext = await openAgentManager(state.appContext.context);
-                }
+/**
+ * Gets total queue depth across all sessions.
+ */
+function getTotalQueueDepth(): number {
+    let total = 0;
+    for (const queueState of state.sessionQueues.values()) {
+        total += queueState.queue.length;
+    }
+    return total;
+}
 
-                if (state.managerContext) {
-                    const switched = await switchSession(state.managerContext.frame, request.session);
-                    if (switched) {
-                        state.currentSession = request.session;
-                        // Re-acquire agent frame after session switch
-                        state.frame = await getAgentFrame(state.page!);
-                    } else {
-                        console.warn(`⚠️ Session '${request.session}' not found, using current session`);
-                    }
-                } else {
-                    console.warn('⚠️ Could not open Agent Manager for session switching');
-                    state.currentSession = request.session;
-                }
-            } catch (e) {
-                console.warn(`⚠️ Session switch failed: ${e}, continuing with current session`);
-                state.currentSession = request.session;
+/**
+ * Resolves target session for a request.
+ * Returns first idle session if none specified.
+ */
+async function resolveTargetSession(
+    registry: SessionRegistry,
+    requestedSession?: string
+): Promise<SessionHandle | null> {
+    if (requestedSession && requestedSession !== 'new') {
+        // Look for specific session
+        const handle = registry.get(requestedSession);
+        if (handle) return handle;
+
+        // Try to find by partial match
+        for (const session of registry.list()) {
+            if (session.id.includes(requestedSession) || session.metadata.title.includes(requestedSession)) {
+                return session;
             }
         }
+        console.warn(`⚠️ Session '${requestedSession}' not found`);
+    }
+
+    // Return first available session
+    const sessions = registry.list();
+    if (sessions.length === 0) {
+        // No sessions discovered, try fallback to default frame
+        if (state.defaultFrame && state.defaultPage) {
+            return null; // Will use fallback
+        }
+        // Try to refresh discovery
+        await registry.discover();
+        if (registry.size === 0) {
+            throw new Error('No Antigravity sessions available');
+        }
+    }
+
+    // Prefer idle sessions
+    const idle = registry.getByState('idle');
+    if (idle.length > 0) return idle[0];
+
+    // Otherwise return first session
+    return registry.list()[0];
+}
+
+async function processRequestForSession(
+    request: ChatCompletionRequest,
+    handle: SessionHandle
+): Promise<ChatCompletionResponse> {
+    const { frame, page, id: sessionId } = handle;
+
+    // Handle new conversation
+    if (request.session === 'new') {
+        console.log('🔄 Starting new conversation');
+        await startNewConversation(frame);
     }
 
     // Start observability trace
@@ -241,15 +292,13 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
     // Format full conversation for multi-turn context
     const prompt = formatConversation(request.messages);
 
-    console.log(`📨 Processing: "${prompt.substring(0, 50)}..."`);
+    console.log(`📨 [${sessionId}] Processing: "${prompt.substring(0, 50)}..."`);
 
     try {
         const falkor = getFalkorClient();
 
         // Log query to FalkorDB
-        if (state.currentSession) {
-            await falkor.logInteraction(state.currentSession, 'user', 'query', prompt).catch((e: any) => console.error('FalkorDB log failed:', e));
-        }
+        await falkor.logInteraction(sessionId, 'user', 'query', prompt).catch((e: any) => console.error('FalkorDB log failed:', e));
 
         // Send prompt and wait for response
         await sendPrompt(frame, page, prompt, { wait: true, timeout: 300000 }); // 5 min timeout
@@ -258,9 +307,7 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
         const agentResponse = await extractResponse(frame);
 
         // Log response to FalkorDB
-        if (state.currentSession) {
-            await falkor.logInteraction(state.currentSession, 'agent', 'response', agentResponse.fullText).catch((e: any) => console.error('FalkorDB log failed:', e));
-        }
+        await falkor.logInteraction(sessionId, 'agent', 'response', agentResponse.fullText).catch((e: any) => console.error('FalkorDB log failed:', e));
 
         // Complete observability trace
         completeChatCompletionTrace(traceCtx, agentResponse.fullText);
@@ -284,7 +331,7 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
                 completion_tokens: Math.ceil(agentResponse.fullText.length / 4),
                 total_tokens: Math.ceil((prompt.length + agentResponse.fullText.length) / 4)
             },
-            session: request.session || state.currentSession || undefined
+            session: sessionId
         };
 
         return response;
@@ -294,41 +341,67 @@ async function processRequest(request: ChatCompletionRequest): Promise<ChatCompl
     }
 }
 
-async function processQueue(): Promise<void> {
-    if (state.isProcessing || state.requestQueue.length === 0) {
+async function processSessionQueue(sessionId: SessionId): Promise<void> {
+    const queueState = getSessionQueue(sessionId);
+
+    if (queueState.isProcessing || queueState.queue.length === 0) {
         return;
     }
 
-    state.isProcessing = true;
-    const item = state.requestQueue.shift()!;
+    queueState.isProcessing = true;
+    const item = queueState.queue.shift()!;
 
     try {
-        const response = await processRequest(item.request);
+        const { registry } = await ensureConnection();
+        const handle = registry.get(sessionId);
+
+        if (!handle) {
+            throw new Error(`Session ${sessionId} no longer available`);
+        }
+
+        const response = await processRequestForSession(item.request, handle);
         item.resolve(response);
     } catch (error) {
         item.reject(error as Error);
     } finally {
-        state.isProcessing = false;
-        // Process next in queue
-        processQueue();
+        queueState.isProcessing = false;
+        // Process next in this session's queue
+        processSessionQueue(sessionId);
     }
 }
 
-function queueRequest(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+async function queueRequest(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+    const { registry } = await ensureConnection();
+
+    // Resolve target session
+    const handle = await resolveTargetSession(registry, request.session);
+    if (!handle) {
+        throw new Error('No session available to process request');
+    }
+
+    const sessionId = handle.id;
+    const queueState = getSessionQueue(sessionId);
+
     return new Promise((resolve, reject) => {
-        // Check queue depth limit
-        if (state.requestQueue.length >= MAX_QUEUE_DEPTH) {
-            reject(new Error(`Queue full (max ${MAX_QUEUE_DEPTH} requests). Try again later.`));
+        // Check per-session queue depth
+        if (queueState.queue.length >= MAX_QUEUE_DEPTH_PER_SESSION) {
+            reject(new Error(`Session ${sessionId} queue full (max ${MAX_QUEUE_DEPTH_PER_SESSION}). Try again later.`));
             return;
         }
 
-        state.requestQueue.push({
+        // Check total queue depth
+        if (getTotalQueueDepth() >= MAX_TOTAL_QUEUE_DEPTH) {
+            reject(new Error(`Server queue full (max ${MAX_TOTAL_QUEUE_DEPTH}). Try again later.`));
+            return;
+        }
+
+        queueState.queue.push({
             resolve,
             reject,
             request,
             timestamp: Date.now()
         });
-        processQueue();
+        processSessionQueue(sessionId);
     });
 }
 
@@ -396,8 +469,7 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
 
 /**
  * Handles streaming chat completions via Server-Sent Events (SSE).
- * IMPORTANT: Uses queue to ensure sequential processing (human-like behavior).
- * Only ONE interaction at a time - reading DOM is passive/read-only.
+ * Uses per-session queues to ensure sequential processing per tab.
  */
 async function handleStreamingChatCompletions(
     request: ChatCompletionRequest,
@@ -424,103 +496,19 @@ async function handleStreamingChatCompletions(
         }
     };
 
-    // Queue this streaming request (still sequential!)
-    return new Promise((resolve, reject) => {
-        const processStreaming = async () => {
-            try {
-                const { frame, page } = await ensureConnection();
+    try {
+        const { registry } = await ensureConnection();
+        const handle = await resolveTargetSession(registry, request.session);
 
-                // Extract prompt
-                const userMessages = request.messages.filter(m => m.role === 'user');
-                if (userMessages.length === 0) {
-                    throw new Error('No user message found');
-                }
-                const prompt = userMessages[userMessages.length - 1].content;
+        if (!handle) {
+            throw new Error('No session available for streaming');
+        }
 
-                console.log(`📡 Streaming request: "${prompt.substring(0, 50)}..."`);
+        const sessionId = handle.id;
+        const queueState = getSessionQueue(sessionId);
 
-                // Send initial role chunk
-                sendSSE({
-                    id,
-                    object: 'chat.completion.chunk',
-                    created,
-                    model,
-                    choices: [{
-                        index: 0,
-                        delta: { role: 'assistant' },
-                        finish_reason: null
-                    }]
-                });
-
-                // Send prompt (NOT waiting - we'll stream the response)
-                await sendPrompt(frame, page, prompt, { wait: false });
-
-                // Stream response via DOM polling
-                await streamResponse(frame, (chunk: StreamChunk) => {
-                    if (chunk.content) {
-                        sendSSE({
-                            id,
-                            object: 'chat.completion.chunk',
-                            created,
-                            model,
-                            choices: [{
-                                index: 0,
-                                delta: { content: chunk.content },
-                                finish_reason: chunk.isComplete ? 'stop' : null
-                            }]
-                        });
-                    }
-
-                    if (chunk.isComplete) {
-                        sendSSE('[DONE]');
-                    }
-                });
-
-                res.end();
-                console.log('✅ Streaming complete');
-                resolve();
-            } catch (error) {
-                console.error('❌ Streaming failed:', error);
-                // Send error as final chunk
-                sendSSE({
-                    id,
-                    object: 'chat.completion.chunk',
-                    created,
-                    model,
-                    choices: [{
-                        index: 0,
-                        delta: { content: `\n\n[ERROR: ${(error as Error).message}]` },
-                        finish_reason: 'stop'
-                    }]
-                });
-                sendSSE('[DONE]');
-                res.end();
-                // Resolve (not reject) since we already sent the error via SSE
-                resolve();
-            }
-        };
-
-        // Add to queue for sequential processing
-        state.requestQueue.push({
-            resolve: () => { /* handled above */ },
-            reject: () => { /* handled above */ },
-            request,
-            timestamp: Date.now()
-        });
-
-        // Check if we can process immediately
-        if (!state.isProcessing) {
-            state.isProcessing = true;
-            state.requestQueue.pop(); // Remove from queue, we're handling it
-            processStreaming().finally(() => {
-                state.isProcessing = false;
-                processQueue(); // Process next in queue
-            });
-        } else {
-            // Wait in queue - will be processed when current finishes
-            // Note: This simplified queue doesn't fully support streaming queuing
-            // For now, reject if busy
-            state.requestQueue.pop();
+        // Check if session is busy
+        if (queueState.isProcessing) {
             sendSSE({
                 id,
                 object: 'chat.completion.chunk',
@@ -528,54 +516,127 @@ async function handleStreamingChatCompletions(
                 model,
                 choices: [{
                     index: 0,
-                    delta: { content: '[Server busy - try again]' },
+                    delta: { content: `[Session ${sessionId} busy - try again or specify different session]` },
                     finish_reason: 'stop'
                 }]
             });
             sendSSE('[DONE]');
             res.end();
-            resolve();
+            return;
         }
-    });
+
+        // Mark session as processing
+        queueState.isProcessing = true;
+
+        try {
+            const { frame, page } = handle;
+
+            // Extract prompt
+            const userMessages = request.messages.filter(m => m.role === 'user');
+            if (userMessages.length === 0) {
+                throw new Error('No user message found');
+            }
+            const prompt = userMessages[userMessages.length - 1].content;
+
+            console.log(`📡 [${sessionId}] Streaming request: "${prompt.substring(0, 50)}..."`);
+
+            // Send initial role chunk
+            sendSSE({
+                id,
+                object: 'chat.completion.chunk',
+                created,
+                model,
+                choices: [{
+                    index: 0,
+                    delta: { role: 'assistant' },
+                    finish_reason: null
+                }]
+            });
+
+            // Send prompt (NOT waiting - we'll stream the response)
+            await sendPrompt(frame, page, prompt, { wait: false });
+
+            // Stream response via DOM polling
+            await streamResponse(frame, (chunk: StreamChunk) => {
+                if (chunk.content) {
+                    sendSSE({
+                        id,
+                        object: 'chat.completion.chunk',
+                        created,
+                        model,
+                        choices: [{
+                            index: 0,
+                            delta: { content: chunk.content },
+                            finish_reason: chunk.isComplete ? 'stop' : null
+                        }]
+                    });
+                }
+
+                if (chunk.isComplete) {
+                    sendSSE('[DONE]');
+                }
+            });
+
+            res.end();
+            console.log(`✅ [${sessionId}] Streaming complete`);
+        } finally {
+            queueState.isProcessing = false;
+            // Process any queued requests for this session
+            processSessionQueue(sessionId);
+        }
+    } catch (error) {
+        console.error('❌ Streaming failed:', error);
+        sendSSE({
+            id,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [{
+                index: 0,
+                delta: { content: `\n\n[ERROR: ${(error as Error).message}]` },
+                finish_reason: 'stop'
+            }]
+        });
+        sendSSE('[DONE]');
+        res.end();
+    }
 }
 
 // Handler for listing sessions
 async function handleSessions(res: http.ServerResponse): Promise<void> {
     try {
         console.log('📋 GET /v1/sessions requested');
-        // Ensure connection
-        if (!state.appContext) {
-            state.appContext = await connectToApp();
-            state.page = state.appContext.page;
-        }
+        const { registry } = await ensureConnection();
 
-        // Open/Ensure Agent Manager is available for full session list
-        if (!state.managerContext) {
-            try {
-                // Try to get manager context if available
-                state.managerContext = await openAgentManager(state.appContext.context);
-            } catch (e) {
-                console.warn('⚠️ Could not open Agent Manager:', e);
-                // Fallback: try to list from current frame if possible? No, listSessions requires manager frame
-                throw new Error('Agent Manager unavailable for listing sessions');
-            }
-        }
-
-        const sessions = await listSessions(state.managerContext.frame);
+        const sessions = registry.list();
 
         sendJson(res, 200, {
             object: 'list',
             data: sessions.map(s => ({
-                id: s.id || `session-${s.index}`, // Fallback ID if none found
-                name: s.name,
+                id: s.id,
+                name: s.metadata.title,
+                state: s.state,
                 object: 'session',
-                created: Math.floor(Date.now() / 1000), // Placeholder
+                created: Math.floor(Date.now() / 1000),
                 owned_by: 'antigravity'
             }))
         });
     } catch (error: any) {
         console.error('❌ Failed to list sessions:', error);
         sendError(res, 500, error.message || 'Failed to list sessions');
+    }
+}
+
+/**
+ * Handler for SSE stream of session state changes.
+ */
+async function handleSessionsStream(res: http.ServerResponse): Promise<void> {
+    try {
+        const { registry } = await ensureConnection();
+        const streamHandler = createSessionEventStream(registry);
+        streamHandler(res);
+    } catch (error: any) {
+        sendError(res, 500, error.message || 'Failed to start session stream');
     }
 }
 
@@ -608,13 +669,20 @@ function handleModelById(modelId: string, res: http.ServerResponse): void {
 }
 
 function handleHealth(res: http.ServerResponse): void {
+    const totalQueueDepth = getTotalQueueDepth();
+    const busySessions = Array.from(state.sessionQueues.entries())
+        .filter(([_, q]) => q.isProcessing)
+        .map(([id, _]) => id);
+
     sendJson(res, 200, {
         status: 'ok',
         connected: state.appContext !== null,
+        sessions: state.registry?.size || 0,
         queue: {
-            length: state.requestQueue.length,
-            maxDepth: MAX_QUEUE_DEPTH,
-            isProcessing: state.isProcessing
+            totalDepth: totalQueueDepth,
+            maxTotalDepth: MAX_TOTAL_QUEUE_DEPTH,
+            maxPerSession: MAX_QUEUE_DEPTH_PER_SESSION,
+            busySessions
         }
     });
 }
@@ -655,6 +723,8 @@ export function startServer(options: ServerOptions): http.Server {
             handleModels(res);
         } else if (url === '/v1/sessions' && method === 'GET') {
             await handleSessions(res);
+        } else if (url === '/v1/sessions/stream' && method === 'GET') {
+            await handleSessionsStream(res);
         } else if (url.startsWith('/v1/models/') && method === 'GET') {
             const modelId = url.replace('/v1/models/', '');
             handleModelById(modelId, res);
@@ -667,20 +737,29 @@ export function startServer(options: ServerOptions): http.Server {
 
     server.listen(port, host, () => {
         console.log(`
-🚀 Angrav OpenAI-Compatible Server
-   ================================
+🚀 Angrav OpenAI-Compatible Server (Multi-Session)
+   =================================================
    Listening on: http://${host}:${port}
    
    Endpoints:
-   - GET  /health              Health check
-   - GET  /v1/models           List models
-   - GET  /v1/sessions         List sessions
-   - POST /v1/chat/completions Chat completions
+   - GET  /health               Health check
+   - GET  /v1/models            List models
+   - GET  /v1/sessions          List active sessions
+   - GET  /v1/sessions/stream   SSE stream of session events
+   - POST /v1/chat/completions  Chat completions (supports session targeting)
    
-   Usage example:
+   Usage examples:
+   
+   # List sessions
+   curl http://${host}:${port}/v1/sessions
+   
+   # Stream session events (SSE)
+   curl -N http://${host}:${port}/v1/sessions/stream
+   
+   # Send chat to specific session
    curl -X POST http://${host}:${port}/v1/chat/completions \\
      -H "Content-Type: application/json" \\
-     -d '{"model":"gemini-antigravity","messages":[{"role":"user","content":"Hello!"}]}'
+     -d '{"model":"gemini-antigravity","messages":[{"role":"user","content":"Hello!"}],"session":"session-abc"}'
 `);
     });
 
@@ -689,6 +768,9 @@ export function startServer(options: ServerOptions): http.Server {
         console.log('\n🛑 Shutting down...');
         await flushObservability();
         await shutdownObservability();
+        if (state.registry) {
+            state.registry.stopPolling();
+        }
         if (state.appContext) {
             await state.appContext.browser.close();
         }
