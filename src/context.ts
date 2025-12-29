@@ -62,14 +62,17 @@ export async function addFileContext(
     // Type @ to trigger file popup
     await page.keyboard.type('@');
 
-    // Wait for popup to appear
-    // TODO: Replace with actual popup selector once discovered
-    await frame.waitForTimeout(500);
+    // Wait for popup to appear (verified selector)
+    try {
+        await frame.locator(SELECTORS.atPopup).waitFor({ state: 'visible', timeout: 3000 });
+    } catch {
+        console.warn('⚠️ @ popup did not appear, continuing anyway...');
+    }
 
     // Type filename to filter
     await page.keyboard.type(filename);
 
-    // Wait for filtering
+    // Wait for filtering to take effect
     await frame.waitForTimeout(300);
 
     // Press Enter to select first match
@@ -162,13 +165,21 @@ export async function uploadImage(
 ): Promise<void> {
     console.log(`🖼️ Uploading image: ${imagePath}`);
 
-    // Click Add Context button
-    // TODO: Discover actual selector
+    // Click Add Context button (verified selector)
     const addButton = frame.locator(SELECTORS.addContextButton);
+
+    if (await addButton.count() === 0) {
+        throw new Error('Add Context button (+) not found. Is the agent panel open?');
+    }
+
     await addButton.click();
 
-    // Wait for menu
-    await frame.waitForTimeout(300);
+    // Wait for dialog to appear
+    try {
+        await frame.locator(SELECTORS.addContextDialog).waitFor({ state: 'visible', timeout: 3000 });
+    } catch {
+        console.warn('⚠️ Add context dialog did not appear, continuing anyway...');
+    }
 
     // Select Images option from dialog
     const imageOption = frame.locator(SELECTORS.imageMenuItem);
@@ -195,12 +206,21 @@ export async function uploadDocument(
 ): Promise<void> {
     console.log(`📄 Uploading document: ${documentPath}`);
 
-    // Click Add Context button
+    // Click Add Context button (verified selector)
     const addButton = frame.locator(SELECTORS.addContextButton);
+
+    if (await addButton.count() === 0) {
+        throw new Error('Add Context button (+) not found. Is the agent panel open?');
+    }
+
     await addButton.click();
 
-    // Wait for menu
-    await frame.waitForTimeout(300);
+    // Wait for dialog to appear
+    try {
+        await frame.locator(SELECTORS.addContextDialog).waitFor({ state: 'visible', timeout: 3000 });
+    } catch {
+        console.warn('⚠️ Add context dialog did not appear, continuing anyway...');
+    }
 
     // Select Docs option from dialog
     const docsOption = frame.locator(SELECTORS.docsMenuItem);

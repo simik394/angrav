@@ -483,4 +483,89 @@ terminalCmd.command('add')
         }
     });
 
+// Model/Mode configuration commands
+import { setModel, setMode, getConfig, listModels, AgentModel, ConversationMode } from './config';
+
+const configCmd = program.command('config')
+    .description('Configure agent model and mode');
+
+configCmd.command('show')
+    .description('Show current model and mode configuration')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const config = await getConfig(frame);
+            await browser.close();
+
+            output(config, opts.json, (data) => {
+                console.log(`\n=== Agent Configuration ===\n`);
+                console.log(`Model: ${data.model}`);
+                console.log(`Mode:  ${data.mode}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+configCmd.command('models')
+    .description('List available models')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const models = await listModels(frame);
+            await browser.close();
+
+            output({ models }, opts.json, (data) => {
+                console.log('\n=== Available Models ===\n');
+                data.models.forEach((m: string, i: number) => {
+                    console.log(`  ${i + 1}. ${m}`);
+                });
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+configCmd.command('set-model')
+    .description('Set the AI model')
+    .argument('<model>', 'Model name (e.g., claude-3.5-sonnet, gpt-4o)')
+    .action(async (model: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            await setModel(frame, model as AgentModel);
+            await browser.close();
+
+            output({ action: 'set_model', model, success: true }, opts.json, () => {
+                console.log(`✅ Model set to: ${model}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+configCmd.command('set-mode')
+    .description('Set the conversation mode')
+    .argument('<mode>', 'Mode: planning, code, chat, or fast')
+    .action(async (mode: string) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            await setMode(frame, mode as ConversationMode);
+            await browser.close();
+
+            output({ action: 'set_mode', mode, success: true }, opts.json, () => {
+                console.log(`✅ Mode set to: ${mode}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 program.parse();
