@@ -4,6 +4,7 @@ import { getAgentState, waitForIdle, StateInfo } from './state';
 import { startNewConversation, getConversationHistory, ConversationHistory } from './session';
 import { output, outputError } from './output';
 import { startServer } from './server';
+import { listCodeChanges, applyAllChanges, applyChangeForFile, readTerminal, undoLastAction, getTerminalLastLines, CodeChange, TerminalOutput } from './execution';
 
 const program = new Command();
 
@@ -483,6 +484,32 @@ terminalCmd.command('add')
         }
     });
 
+// Terminal read command - uses execution module (imported with execute commands below)
+
+terminalCmd.command('read')
+    .description('Read current terminal output')
+    .option('-n, --lines <number>', 'Show only last N lines', '50')
+    .action(async (options: { lines: string }) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+
+            const lineCount = parseInt(options.lines);
+            const text = lineCount < 1000
+                ? await getTerminalLastLines(page, lineCount)
+                : (await readTerminal(page)).text;
+
+            await browser.close();
+
+            output<TerminalOutput>({ text, timestamp: new Date() }, opts.json, () => {
+                console.log('\n=== Terminal Output ===\n');
+                console.log(text);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 // Model/Mode configuration commands
 import { setModel, setMode, getConfig, listModels, AgentModel, ConversationMode } from './config';
 
@@ -562,6 +589,83 @@ configCmd.command('set-mode')
 
             output({ action: 'set_mode', mode, success: true }, opts.json, () => {
                 console.log(`✅ Mode set to: ${mode}`);
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+// Execution commands (Phase 5) - imports at top of file
+
+const executeCmd = program.command('execute')
+    .description('Apply code changes and manage execution');
+
+executeCmd.command('list')
+    .description('List all code changes in the current response')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const changes = await listCodeChanges(frame);
+            await browser.close();
+
+            output<CodeChange[]>(changes, opts.json, (data) => {
+                if (data.length === 0) {
+                    console.log('No code changes found.');
+                    return;
+                }
+                console.log('\n=== Code Changes ===\n');
+                data.forEach((c, i) => {
+                    console.log(`  ${i + 1}. [${c.language}] ${c.filename} ${c.hasApplyButton ? '✓' : ''}`);
+                });
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+executeCmd.command('apply')
+    .description('Apply code changes')
+    .option('-f, --file <pattern>', 'Apply only to files matching pattern')
+    .action(async (options: { file?: string }) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+
+            let applied: number | boolean;
+            if (options.file) {
+                applied = await applyChangeForFile(frame, options.file);
+            } else {
+                applied = await applyAllChanges(frame);
+            }
+            await browser.close();
+
+            output({ action: 'apply', applied, file: options.file }, opts.json, () => {
+                if (typeof applied === 'number') {
+                    console.log(`✅ Applied ${applied} code changes`);
+                } else {
+                    console.log(applied ? '✅ Change applied' : '❌ No changes applied');
+                }
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+executeCmd.command('undo')
+    .description('Undo the last action')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const success = await undoLastAction(frame);
+            await browser.close();
+
+            output({ action: 'undo', success }, opts.json, () => {
+                console.log(success ? '✅ Undo executed' : '❌ Undo not available');
             });
         } catch (error) {
             outputError(error as Error, opts.json);
