@@ -46,6 +46,14 @@ const SOLVERS: SolverConfig[] = [
         capabilities: ['code', 'documentation', 'analysis']
     },
     {
+        name: 'jules',
+        tag: 'jules',
+        endpoint: 'https://jules.googleapis.com/v1alpha/sessions',
+        account: 'jules',
+        priority: 2,
+        capabilities: ['code', 'implementation', 'feature', 'refactoring', 'github']
+    },
+    {
         name: 'perplexity',
         tag: 'perplexity',
         endpoint: 'http://rsrch-server:3000/api/query', // rsrch agent
