@@ -510,6 +510,62 @@ terminalCmd.command('read')
         }
     });
 
+// Rate limit commands
+import { detectRateLimit, getTimeRemaining, dismissRateLimitPopup, RateLimitInfo } from './ratelimit';
+
+const ratelimitCmd = program.command('ratelimit')
+    .description('Check and manage model rate limits');
+
+ratelimitCmd.command('check')
+    .description('Check if current model is rate-limited')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const limitInfo = await detectRateLimit(frame);
+            await browser.close();
+
+            if (limitInfo) {
+                const remaining = getTimeRemaining(limitInfo);
+                output<RateLimitInfo & { timeRemaining: string | null }>(
+                    { ...limitInfo, timeRemaining: remaining },
+                    opts.json,
+                    (data) => {
+                        console.log('\n⚠️ RATE LIMIT ACTIVE\n');
+                        console.log(`  Model: ${data.model}`);
+                        console.log(`  Available at: ${data.availableAt}`);
+                        if (remaining) console.log(`  Time remaining: ${remaining}`);
+                    }
+                );
+            } else {
+                output({ isLimited: false }, opts.json, () => {
+                    console.log('✅ No rate limit detected');
+                });
+            }
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
+ratelimitCmd.command('dismiss')
+    .description('Dismiss the rate limit popup')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const dismissed = await dismissRateLimitPopup(frame);
+            await browser.close();
+
+            output({ action: 'dismiss', success: dismissed }, opts.json, () => {
+                console.log(dismissed ? '✅ Popup dismissed' : '❌ No popup to dismiss');
+            });
+        } catch (error) {
+            outputError(error as Error, opts.json);
+        }
+    });
+
 // Model/Mode configuration commands
 import { setModel, setMode, getConfig, listModels, AgentModel, ConversationMode } from './config';
 
