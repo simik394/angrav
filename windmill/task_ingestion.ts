@@ -117,34 +117,87 @@ async function triggerDispatch(issue: YouTrackIssue): Promise<boolean> {
 // Windmill Entrypoint
 // ============================================================================
 
+import Redis from 'ioredis';
+import { selectParallelBatch, ScoredIssue } from './task_scorer';
+
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const MAX_PARALLEL_JULES = 15;
+
+interface IngestionResultV2 extends IngestionResult {
+    batch: Array<{ id: string; score: number; summary: string }>;
+    conflicting: number;
+}
+
 export async function main(
     project: string = PROJECT_KEY,
-    dry_run: boolean = false
-): Promise<IngestionResult> {
+    dry_run: boolean = false,
+    max_parallel: number = MAX_PARALLEL_JULES
+): Promise<IngestionResultV2> {
     console.log(`\n📋 Task Ingestion: Scanning ${project} for ready issues`);
     console.log(`   Dry run: ${dry_run}`);
+    console.log(`   Max parallel slots: ${max_parallel}`);
 
-    const result: IngestionResult = {
+    const result: IngestionResultV2 = {
         processed: 0,
         dispatched: [],
         skipped: [],
-        errors: []
+        errors: [],
+        batch: [],
+        conflicting: 0
     };
+
+    const redis = new Redis(REDIS_URL);
 
     try {
         // Fetch ready issues
         const issues = await fetchReadyIssues(project);
         console.log(`   Found ${issues.length} potential issues`);
 
-        for (const issue of issues) {
-            if (!isReadyForAutomation(issue)) {
-                result.skipped.push(issue.id);
-                continue;
-            }
+        // Filter to only ready issues
+        const readyIssues = issues.filter(isReadyForAutomation);
+        console.log(`   Ready for automation: ${readyIssues.length}`);
+
+        result.skipped = issues
+            .filter(i => !isReadyForAutomation(i))
+            .map(i => i.id);
+
+        if (readyIssues.length === 0) {
+            console.log('   No issues to process');
+            return result;
+        }
+
+        // Use task_scorer to select optimal parallel batch
+        console.log(`\n📊 Scoring and selecting optimal batch...`);
+        const scoredBatch = await selectParallelBatch(
+            redis,
+            readyIssues.map(i => ({
+                ...i,
+                dueDate: undefined,  // Would come from YouTrack
+                estimate: undefined,
+                blockedBy: undefined,
+                blocks: undefined,
+                affectedFiles: undefined
+            })),
+            max_parallel
+        );
+
+        result.batch = scoredBatch.map(s => ({
+            id: s.issue.id,
+            score: s.score,
+            summary: s.issue.summary
+        }));
+        result.conflicting = readyIssues.length - scoredBatch.length;
+
+        console.log(`   Selected ${scoredBatch.length} issues for dispatch`);
+        console.log(`   Conflicting (deferred): ${result.conflicting}`);
+
+        // Dispatch selected batch
+        for (const scored of scoredBatch) {
+            const issue = scored.issue as YouTrackIssue;
 
             try {
                 if (!dry_run) {
-                    // Mark as processing to prevent re-dispatch
+                    // Mark as processing
                     await markAsProcessing(issue.id);
 
                     // Trigger dispatch
@@ -154,8 +207,10 @@ export async function main(
                 result.dispatched.push(issue.id);
                 result.processed++;
 
+                console.log(`   ✅ ${issue.id} (score: ${scored.score})`);
+
             } catch (error) {
-                console.error(`❌ Failed to dispatch ${issue.id}:`, error);
+                console.error(`   ❌ ${issue.id}:`, error);
                 result.errors.push(`${issue.id}: ${String(error)}`);
             }
         }
@@ -163,7 +218,7 @@ export async function main(
         console.log(`\n✅ Ingestion complete:`);
         console.log(`   Processed: ${result.processed}`);
         console.log(`   Dispatched: ${result.dispatched.length}`);
-        console.log(`   Skipped: ${result.skipped.length}`);
+        console.log(`   Conflicting (next batch): ${result.conflicting}`);
         console.log(`   Errors: ${result.errors.length}`);
 
         return result;
@@ -172,6 +227,8 @@ export async function main(
         console.error('❌ Ingestion failed:', error);
         result.errors.push(String(error));
         return result;
+    } finally {
+        await redis.quit();
     }
 }
 
