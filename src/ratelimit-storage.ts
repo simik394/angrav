@@ -116,12 +116,10 @@ export async function persistRateLimit(
 
     console.log(`📝 Persisted rate limit: ${limitInfo.model} -> ${streamKey} [${entryId}]`);
 
-    // Also update a current state key for fast lookups
+    // Also update a current state key for fast lookups (no TTL - immutable)
     await client.set(
         `${KEY_PREFIX}:current:${getStreamKey(limitInfo.model, account).replace(KEY_PREFIX + ':', '')}`,
-        JSON.stringify(record),
-        'EX',
-        Math.max(1, Math.floor((record.availableAtUnix - Date.now()) / 1000))  // TTL until available
+        JSON.stringify(record)
     );
 
     return entryId || '';
