@@ -59,16 +59,17 @@
 
 ### Phase 5: Review & Execution
 
-> **Status**: Not started.
+> **Status**: ✅ Implemented
 
 | Task | Priority | Notes |
 |------|----------|-------|
-| Analyze code block action buttons | High | "Apply", "Copy", "Reject" buttons |
-| Implement `applyCodeChanges()` | High | Auto-apply suggested changes |
-| Implement `undoLastAction()` | Medium | Revert applied changes |
-| Research xterm reading strategy | Medium | Complex - terminal is canvas-based |
-| Implement `readTerminal()` | Medium | Extract terminal output |
-| Add CLI `apply`, `undo`, `terminal` | Low | CLI wrappers |
+| ~~Analyze code block action buttons~~ | ✅ Done | Found via DOM inspection |
+| ~~Implement `listCodeChanges()`~~ | ✅ Done | `src/execution.ts` |
+| ~~Implement `applyAllChanges()`~~ | ✅ Done | `src/execution.ts` |
+| ~~Implement `undoLastAction()`~~ | ✅ Done | `src/execution.ts` |
+| ~~Implement `readTerminal()`~~ | ✅ Done | `src/execution.ts` |
+| ~~Add CLI `execute` commands~~ | ✅ Done | `angrav execute list/apply/undo` |
+| ~~Add CLI `terminal read`~~ | ✅ Done | `angrav terminal read --lines N` |
 
 **Spec**: [review_execution_spec.md](file:///home/sim/Obsi/Prods/01-pwf/agents/angrav/docs/review_execution_spec.md)
 
