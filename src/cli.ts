@@ -566,6 +566,137 @@ ratelimitCmd.command('dismiss')
         }
     });
 
+// Redis storage commands
+import {
+    persistRateLimit as persistToRedis,
+    getCurrentRateLimit as getFromRedis,
+    getRateLimitHistory,
+    getAllCurrentLimits,
+    closeRedis,
+    RateLimitRecord
+} from './ratelimit-storage';
+
+ratelimitCmd.command('persist')
+    .description('Detect and persist current rate limit to Redis')
+    .requiredOption('-a, --account <email>', 'Account email')
+    .option('-s, --session <id>', 'Session ID', 'default')
+    .action(async (options: { account: string; session: string }) => {
+        const opts = program.opts();
+        try {
+            const { browser, page } = await connectToApp();
+            const frame = await getAgentFrame(page);
+            const limitInfo = await detectRateLimit(frame);
+            await browser.close();
+
+            if (limitInfo) {
+                const entryId = await persistToRedis(limitInfo, options.account, options.session);
+                await closeRedis();
+
+                output({ action: 'persist', entryId, ...limitInfo }, opts.json, () => {
+                    console.log(`\n📝 Rate limit persisted to Redis`);
+                    console.log(`  Model: ${limitInfo.model}`);
+                    console.log(`  Account: ${options.account}`);
+                    console.log(`  Entry ID: ${entryId}`);
+                });
+            } else {
+                await closeRedis();
+                output({ action: 'persist', success: false, reason: 'no_limit' }, opts.json, () => {
+                    console.log('✅ No rate limit to persist');
+                });
+            }
+        } catch (error) {
+            await closeRedis();
+            outputError(error as Error, opts.json);
+        }
+    });
+
+ratelimitCmd.command('get')
+    .description('Get current rate limit for a model from Redis')
+    .requiredOption('-m, --model <name>', 'Model name')
+    .requiredOption('-a, --account <email>', 'Account email')
+    .action(async (options: { model: string; account: string }) => {
+        const opts = program.opts();
+        try {
+            const record = await getFromRedis(options.model, options.account);
+            await closeRedis();
+
+            if (record) {
+                const remaining = record.availableAtUnix > Date.now()
+                    ? Math.floor((record.availableAtUnix - Date.now()) / 60000) + 'm'
+                    : 'Available now';
+
+                output<RateLimitRecord & { timeRemaining: string }>(
+                    { ...record, timeRemaining: remaining },
+                    opts.json,
+                    (data) => {
+                        console.log('\n📊 Rate Limit Status (from Redis)\n');
+                        console.log(`  Model: ${data.model}`);
+                        console.log(`  Account: ${data.account}`);
+                        console.log(`  Limited: ${data.isLimited}`);
+                        console.log(`  Available at: ${data.availableAt}`);
+                        console.log(`  Time remaining: ${remaining}`);
+                        console.log(`  Last checked: ${data.detectedAt}`);
+                    }
+                );
+            } else {
+                output({ found: false }, opts.json, () => {
+                    console.log('❌ No rate limit record found');
+                });
+            }
+        } catch (error) {
+            await closeRedis();
+            outputError(error as Error, opts.json);
+        }
+    });
+
+ratelimitCmd.command('history')
+    .description('Get rate limit history for a model')
+    .requiredOption('-m, --model <name>', 'Model name')
+    .requiredOption('-a, --account <email>', 'Account email')
+    .option('-n, --limit <number>', 'Number of entries', '10')
+    .action(async (options: { model: string; account: string; limit: string }) => {
+        const opts = program.opts();
+        try {
+            const records = await getRateLimitHistory(options.model, options.account, parseInt(options.limit));
+            await closeRedis();
+
+            output<RateLimitRecord[]>(records, opts.json, (data) => {
+                console.log(`\n📜 Rate Limit History (${data.length} entries)\n`);
+                data.forEach((r, i) => {
+                    console.log(`  ${i + 1}. ${r.detectedAt} - ${r.isLimited ? '⚠️ Limited' : '✅ Available'} until ${r.availableAt}`);
+                });
+            });
+        } catch (error) {
+            await closeRedis();
+            outputError(error as Error, opts.json);
+        }
+    });
+
+ratelimitCmd.command('list-all')
+    .description('List all currently rate-limited models')
+    .action(async () => {
+        const opts = program.opts();
+        try {
+            const records = await getAllCurrentLimits();
+            await closeRedis();
+
+            output<RateLimitRecord[]>(records, opts.json, (data) => {
+                if (data.length === 0) {
+                    console.log('✅ No active rate limits');
+                    return;
+                }
+                console.log(`\n⚠️ Active Rate Limits (${data.length})\n`);
+                data.forEach((r) => {
+                    const remaining = Math.floor((r.availableAtUnix - Date.now()) / 60000);
+                    console.log(`  ${r.model} (${r.account}) - ${remaining}m remaining`);
+                });
+            });
+        } catch (error) {
+            await closeRedis();
+            outputError(error as Error, opts.json);
+        }
+    });
+
 // Model/Mode configuration commands
 import { setModel, setMode, getConfig, listModels, AgentModel, ConversationMode } from './config';
 
