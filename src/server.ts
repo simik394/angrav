@@ -9,7 +9,8 @@ import { openAgentManager, ManagerContext } from './manager';
 import { Frame, Page } from '@playwright/test';
 import { getFalkorClient } from '@agents/shared';
 import { SessionRegistry, SessionId, SessionHandle } from './registry';
-import { createSessionEventStream } from './session-stream';
+import { createSessionEventStream, createSingleSessionEventStream } from './session-stream';
+import { extractResponse as extractFullResponse } from './extraction';
 import {
     startChatCompletionTrace,
     completeChatCompletionTrace,
@@ -640,6 +641,22 @@ async function handleSessionsStream(res: http.ServerResponse): Promise<void> {
     }
 }
 
+/**
+ * Handler for SSE stream of a SINGLE session's events.
+ */
+async function handleSingleSessionStream(sessionId: string, res: http.ServerResponse): Promise<void> {
+    try {
+        const { registry } = await ensureConnection();
+        const streamHandler = createSingleSessionEventStream(registry, sessionId, {
+            includeResponses: true,
+            extractResponse: extractFullResponse
+        });
+        streamHandler(res);
+    } catch (error: any) {
+        sendError(res, 500, error.message || 'Failed to start session stream');
+    }
+}
+
 function handleModels(res: http.ServerResponse): void {
     const models: ModelsResponse = {
         object: 'list',
@@ -725,6 +742,9 @@ export function startServer(options: ServerOptions): http.Server {
             await handleSessions(res);
         } else if (url === '/v1/sessions/stream' && method === 'GET') {
             await handleSessionsStream(res);
+        } else if (url.match(/^\/v1\/sessions\/[^/]+\/events$/) && method === 'GET') {
+            const sessionId = url.split('/')[3];
+            await handleSingleSessionStream(sessionId, res);
         } else if (url.startsWith('/v1/models/') && method === 'GET') {
             const modelId = url.replace('/v1/models/', '');
             handleModelById(modelId, res);

@@ -169,3 +169,122 @@ export function createSessionEventStreamWithResponses(
         });
     };
 }
+
+// ============================================================================
+// Per-Session Event Stream
+// ============================================================================
+
+/**
+ * Creates an SSE stream handler for a SINGLE session.
+ * Only emits events for the specified session, filtering out events from others.
+ */
+export function createSingleSessionEventStream(
+    registry: SessionRegistry,
+    targetSessionId: SessionId,
+    options: {
+        includeResponses?: boolean;
+        extractResponse?: (frame: import('@playwright/test').Frame) => Promise<AgentResponse>;
+    } = {}
+): (res: http.ServerResponse) => void {
+    return (res: http.ServerResponse) => {
+        const cleanup = setupSSE(res);
+        const { includeResponses = true, extractResponse } = options;
+
+        // Check if session exists
+        const handle = registry.get(targetSessionId);
+        if (!handle) {
+            // Send error event and close
+            const errorEvent: SessionStateEvent = {
+                type: 'session_closed',
+                sessionId: targetSessionId,
+                state: 'error',
+                timestamp: Date.now()
+            };
+            sendSSE(res, errorEvent);
+            res.end();
+            return;
+        }
+
+        // Event handler - filter to only target session
+        const onStateChange = async (event: SessionEvent) => {
+            if (event.sessionId !== targetSessionId) return;
+
+            const sseEvent: SessionStateEvent = {
+                type: 'state_change',
+                sessionId: event.sessionId,
+                state: event.currentState || 'idle',
+                previousState: event.previousState,
+                timestamp: Date.now()
+            };
+            sendSSE(res, sseEvent);
+        };
+
+        const onSessionIdle = async (sessionId: SessionId) => {
+            if (sessionId !== targetSessionId) return;
+
+            let response: AgentResponse | undefined;
+
+            // Extract response if enabled
+            if (includeResponses && extractResponse) {
+                const h = registry.get(sessionId);
+                if (h) {
+                    try {
+                        response = await extractResponse(h.frame);
+                    } catch (e) {
+                        console.warn(`⚠️ Failed to extract response for ${sessionId}`);
+                    }
+                }
+            }
+
+            const sseEvent: SessionStateEvent = {
+                type: includeResponses ? 'response_ready' : 'session_idle',
+                sessionId,
+                state: 'idle',
+                response,
+                timestamp: Date.now()
+            };
+            sendSSE(res, sseEvent);
+        };
+
+        const onSessionClosed = (data: { sessionId: SessionId }) => {
+            if (data.sessionId !== targetSessionId) return;
+
+            const sseEvent: SessionStateEvent = {
+                type: 'session_closed',
+                sessionId: data.sessionId,
+                state: 'error',
+                timestamp: Date.now()
+            };
+            sendSSE(res, sseEvent);
+
+            // Auto-close stream when session closes
+            cleanup();
+            res.end();
+        };
+
+        // Attach listeners
+        registry.on('state_change', onStateChange);
+        registry.on('session_idle', onSessionIdle);
+        registry.on('session_closed', onSessionClosed);
+
+        // Send initial state for this session
+        const initialEvent: SessionStateEvent = {
+            type: 'state_change',
+            sessionId: handle.id,
+            state: handle.state,
+            timestamp: Date.now()
+        };
+        sendSSE(res, initialEvent);
+
+        // Cleanup on client disconnect
+        res.on('close', () => {
+            cleanup();
+            registry.off('state_change', onStateChange);
+            registry.off('session_idle', onSessionIdle);
+            registry.off('session_closed', onSessionClosed);
+            console.log(`📡 SSE client disconnected from session ${targetSessionId}`);
+        });
+
+        console.log(`📡 SSE client connected to session ${targetSessionId}`);
+    };
+}
