@@ -17,7 +17,7 @@ async function countTokensWithGemini(text: string): Promise<number | null> {
     }
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
         const result = await model.countTokens(text);
         return result.totalTokens;
     } catch (error) {
@@ -206,9 +206,18 @@ async function main() {
                     // Token counting
                     if (showTokens) {
                         console.log(`  🔢 Counting tokens with Gemini...`);
-                        const tokenCount = await countTokensWithGemini(fileContent);
-                        if (tokenCount !== null) {
-                            console.log(`  📊 Token count: ${tokenCount.toLocaleString()} tokens`);
+                        const incrementTokens = await countTokensWithGemini(fileContent);
+                        if (incrementTokens !== null) {
+                            console.log(`  📊 Increment tokens: ${incrementTokens.toLocaleString()} tokens`);
+                        }
+
+                        // In incremental mode, also count total session
+                        if (incremental && !fresh && itemsToSave !== items) {
+                            const fullContent = formatOutput(items);
+                            const totalTokens = await countTokensWithGemini(fullContent);
+                            if (totalTokens !== null) {
+                                console.log(`  📊 Total session tokens: ${totalTokens.toLocaleString()} tokens`);
+                            }
                         }
                     }
                 } else {
