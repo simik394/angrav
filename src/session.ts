@@ -468,8 +468,17 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                 }
             }
         }, targetPos);
-        await frame.waitForTimeout(100);
+        await frame.waitForTimeout(150);
         await expandCollapsedSections(frame);
+
+        // Also extract during PASS 1 to catch expanded content before it collapses
+        const visibleItems = await extractVisibleItems();
+        for (const item of visibleItems) {
+            if (!seenKeys.has(item.key)) {
+                seenKeys.add(item.key);
+                allItems.push(item);
+            }
+        }
 
         // Check if reached top
         const pos = await frame.evaluate(() => {
@@ -478,6 +487,7 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
         });
         if (pos <= 10) break;
     }
+    console.log(`  📥 After PASS 1: ${allItems.length} items`);
 
     // Scroll back to bottom for extraction pass
     await frame.evaluate(() => {
