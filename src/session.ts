@@ -125,7 +125,6 @@ export interface StructuredMessage {
 export interface StructuredHistory {
     items: StructuredMessage[];
 }
-
 /**
  * Retrieves structured conversation history, attempting to distinguish tools and thoughts.
  * Updated selectors based on Jan 2025 DOM inspection.
@@ -135,60 +134,65 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
     const items: StructuredMessage[] = [];
 
     // The chat is inside an element with id="cascade" or id="chat"
-    // Messages are NOT in div.bg-ide-chat-background (those are popovers)
-    // We need to find the actual message container
-
-    // Try to find the chat container
     let chatContainer = frame.locator('#cascade, #chat').first();
 
-    // If not found by ID, try class-based selectors
     if (await chatContainer.count() === 0) {
-        // Fallback: look for common message patterns
         chatContainer = frame.locator('[class*="chat"], [class*="message"]').first();
     }
 
     if (await chatContainer.count() === 0) {
-        console.log('  ⚠️ Could not find chat container. Trying full frame scan...');
-        // Ultimate fallback: scan for any text that looks like messages
-        const allText = await frame.locator('body').innerText().catch(() => '');
-        if (allText.trim()) {
-            items.push({ type: 'agent', content: allText.substring(0, 5000) });
-        }
+        console.log('  ⚠️ Could not find chat container.');
         return { items };
     }
 
-    // Look for message-like elements within the container
-    // Based on inspection: messages may be in divs with specific classes
-    // Text is often in span.font-semibold or .prose elements
+    // 1. Extract THOUGHTS - buttons with "Thought for Xs"
+    const thoughtButtons = chatContainer.locator('button:has-text("Thought for")');
+    const thoughtCount = await thoughtButtons.count();
+    console.log(`  Found ${thoughtCount} thought blocks.`);
 
-    // Strategy: Get all text blocks that look like messages
-    const textBlocks = chatContainer.locator('.prose, [class*="message"], span.font-semibold');
-    const count = await textBlocks.count();
+    for (let i = 0; i < thoughtCount; i++) {
+        const btn = thoughtButtons.nth(i);
+        const btnText = await btn.innerText().catch(() => 'Thought');
+        items.push({ type: 'thought', content: btnText });
+    }
 
-    console.log(`  Found ${count} potential text blocks in chat.`);
+    // 2. Extract TOOL CALLS - look for spans with title attribute inside div.animate-fade-in
+    const toolTitles = chatContainer.locator('div.animate-fade-in span.truncate[title]');
+    const toolCount = await toolTitles.count();
+    console.log(`  Found ${toolCount} tool calls.`);
 
-    for (let i = 0; i < count; i++) {
-        const block = textBlocks.nth(i);
-        const text = await block.innerText().catch(() => '');
-
-        if (!text.trim()) continue;
-
-        // Heuristic classification based on content patterns
-        const lowerText = text.toLowerCase();
-
-        if (lowerText.includes('tool call:') || lowerText.startsWith('🛠️')) {
-            items.push({ type: 'tool-call', content: text });
-        } else if (lowerText.includes('tool output:') || lowerText.startsWith('📝')) {
-            items.push({ type: 'tool-output', content: text });
-        } else if (lowerText.includes('thought') || lowerText.startsWith('🤔')) {
-            items.push({ type: 'thought', content: text });
-        } else if (text.length < 500 && !text.includes('\n')) {
-            // Short single-line text is likely user input
-            items.push({ type: 'user', content: text });
-        } else {
-            // Longer text is likely agent response
-            items.push({ type: 'agent', content: text });
+    for (let i = 0; i < toolCount; i++) {
+        const span = toolTitles.nth(i);
+        const title = await span.getAttribute('title').catch(() => null);
+        if (title) {
+            items.push({ type: 'tool-call', content: title });
         }
+    }
+
+    // 3. Extract PROSE blocks (agent responses)
+    const proseBlocks = chatContainer.locator('.prose');
+    const proseCount = await proseBlocks.count();
+    console.log(`  Found ${proseCount} prose blocks.`);
+
+    for (let i = 0; i < proseCount; i++) {
+        const block = proseBlocks.nth(i);
+        const text = await block.innerText().catch(() => '');
+        if (!text.trim() || text.length < 10) continue;
+        items.push({ type: 'agent', content: text });
+    }
+
+    // 4. Extract USER messages - span.text-ide-text-color with short text
+    const userSpans = chatContainer.locator('span.text-ide-text-color');
+    const userCount = await userSpans.count();
+
+    for (let i = 0; i < userCount; i++) {
+        const el = userSpans.nth(i);
+        const text = await el.innerText().catch(() => '');
+
+        if (!text.trim() || text.length < 5 || text.length > 200) continue;
+        if (['Ask anything', 'Add context', 'Planning', 'Model', 'Thought'].some(ui => text.includes(ui))) continue;
+
+        items.push({ type: 'user', content: text });
     }
 
     // Deduplicate (sometimes nested elements cause duplicates)
@@ -200,6 +204,7 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
         return true;
     });
 
+    console.log(`  Total unique items: ${dedupedItems.length}`);
     return { items: dedupedItems };
 }
 
