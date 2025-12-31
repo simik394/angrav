@@ -179,10 +179,7 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                             const codeBlock = container.querySelector('.code-block');
                             if (codeBlock) {
                                 codeContent = codeBlock.textContent?.trim() || '';
-                                // Limit code block size to avoid huge extracts
-                                if (codeContent.length > 500) {
-                                    codeContent = codeContent.substring(0, 500) + '...';
-                                }
+                                // No truncation - capture full code block for accurate token count
                             }
                         }
 
@@ -276,10 +273,7 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                     const nextSibling = el.nextElementSibling;
                     if (nextSibling?.tagName === 'PRE') {
                         outputText = nextSibling.textContent?.trim() || '';
-                        // Limit output size
-                        if (outputText.length > 1000) {
-                            outputText = outputText.substring(0, 1000) + '\n... (truncated)';
-                        }
+                        // No truncation - capture full terminal output for accurate token count
                     }
 
                     const fullContent = outputText
