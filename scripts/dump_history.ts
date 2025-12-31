@@ -2,12 +2,24 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { chromium } from '@playwright/test';
-import { getStructuredHistory } from '../src/session';
+import { getStructuredHistory, listSessions, switchSession } from '../src/session';
+import { getAgentFrame } from '../src/core';
 
 const CDP_ENDPOINT = process.env.BROWSER_CDP_ENDPOINT || 'http://localhost:9222';
 
 async function main() {
-    console.log('🚀 Starting Angrav Session History Dump (Browser Connection Mode)...');
+    const args = process.argv.slice(2);
+    const dumpAll = args.includes('--all');
+    const sessionName = args.find(a => !a.startsWith('--'));
+
+    console.log('🚀 Starting Angrav Session History Dump...');
+    if (dumpAll) {
+        console.log('   Mode: Dump ALL sessions');
+    } else if (sessionName) {
+        console.log(`   Mode: Dump session "${sessionName}"`);
+    } else {
+        console.log('   Mode: Dump ACTIVE session only');
+    }
 
     const dumpDir = path.resolve(process.cwd(), 'history_dump');
     if (!fs.existsSync(dumpDir)) {
@@ -26,76 +38,144 @@ async function main() {
         }
 
         const pages = context.pages();
-        console.log(`🔍 Found ${pages.length} pages via Browser Connection.`);
+        console.log(`🔍 Found ${pages.length} pages.`);
 
-        // Find the active window
-        // If there's only one, use it.
-        // We know 'Launchpad' (BF67...) is usually the one.
-        let targetPage = pages.find(p => !p.url().includes('devtools://'));
+        // Find the Editor window (not Launchpad)
+        let editorPage = pages.find(p => {
+            const url = p.url();
+            return url.includes('workbench.html') && !url.includes('workbench-jetski-agent');
+        });
 
-        if (!targetPage) {
-            if (pages.length > 0) targetPage = pages[0];
+        if (!editorPage) {
+            editorPage = pages.find(p => !p.url().includes('devtools://'));
         }
 
-        if (!targetPage) {
-            console.error('❌ No valid pages found.');
+        if (!editorPage) {
+            console.error('❌ No Editor page found.');
             return;
         }
 
-        console.log(`✅ Targeted Page: "${await targetPage.title()}"`);
-        console.log(`   URL: ${targetPage.url()}`);
+        const pageTitle = await editorPage.title();
+        console.log(`✅ Using Editor Page: "${pageTitle}"`);
 
-        const mainFrame = targetPage.mainFrame();
+        // Find the Agent Panel frame
+        let agentFrame;
+        try {
+            agentFrame = await getAgentFrame(editorPage);
+            console.log('✅ Found Agent Panel frame.');
+        } catch (e) {
+            console.error('❌ Could not find Agent Panel frame. Is the Agent view open?');
+            return;
+        }
 
-        // 1. Check for Chat in Main Frame
-        console.log('🔍 Scanning Main Frame for chat content...');
-        // We look for any text/elements that resemble the chat
-        // Selector: div.bg-ide-chat-background
-        const count = await mainFrame.locator('div.bg-ide-chat-background').count();
-        console.log(`   Found ${count} message rows in Main Frame.`);
+        // Determine which sessions to dump
+        let sessionsToProcess: { name: string; id?: string }[] = [];
 
-        let extractionSource = mainFrame;
+        if (dumpAll) {
+            // Need to find the Agent Manager to list sessions
+            const managerPage = pages.find(p => p.url().includes('workbench-jetski-agent'));
+            if (managerPage) {
+                const sessions = await listSessions(managerPage.mainFrame());
+                sessionsToProcess = sessions;
+                console.log(`📋 Found ${sessions.length} sessions to dump.`);
+            } else {
+                console.warn('⚠️ Agent Manager not open. Cannot list all sessions.');
+                console.log('   Falling back to active session only.');
+            }
+        } else if (sessionName) {
+            sessionsToProcess = [{ name: sessionName, id: '' }];
+        }
 
-        // 2. Check Frames (iframes)
-        if (count === 0) {
-            console.log('🔍 Scanning subframes for chat...');
-            const frames = targetPage.frames();
-            console.log(`   Found ${frames.length} subframes.`);
+        // If no sessions specified, just dump the current one
+        if (sessionsToProcess.length === 0) {
+            console.log('📜 Extracting ACTIVE session...');
+            const { items } = await getStructuredHistory(agentFrame);
+            console.log(`  ✅ Extracted ${items.length} items.`);
 
-            for (const f of frames) {
-                const fCount = await f.locator('div.bg-ide-chat-background').count();
-                if (fCount > 0) {
-                    console.log(`   ✅ Found ${fCount} rows in frame: ${f.url().slice(0, 50)}...`);
-                    extractionSource = f;
-                    break;
+            if (items.length > 0) {
+                const safeName = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'active';
+                const fileName = `${safeName}_${Date.now()}.txt`;
+                const fileContent = formatOutput(items);
+                const filePath = path.join(dumpDir, fileName);
+                fs.writeFileSync(filePath, fileContent);
+                console.log(`  💾 Saved to: ${filePath}`);
+            } else {
+                console.warn('  ⚠️ No content found.');
+            }
+        } else {
+            // Process each session
+            for (const session of sessionsToProcess) {
+                console.log(`\n📂 Processing session: "${session.name}"...`);
+
+                // Switch to session if we have manager access
+                if (dumpAll) {
+                    const managerPage = pages.find(p => p.url().includes('workbench-jetski-agent'));
+                    if (managerPage) {
+                        const switched = await switchSession(managerPage.mainFrame(), session.name);
+                        if (!switched) {
+                            console.error(`  ❌ Failed to switch to session "${session.name}"`);
+                            continue;
+                        }
+                        // Wait for content to load
+                        await editorPage.waitForTimeout(2000);
+                        // Re-get agent frame (may have changed)
+                        try {
+                            agentFrame = await getAgentFrame(editorPage);
+                        } catch (e) {
+                            console.error(`  ❌ Agent frame not found after switch.`);
+                            continue;
+                        }
+                    }
+                }
+
+                // Extract history
+                const { items } = await getStructuredHistory(agentFrame);
+                console.log(`  ✅ Extracted ${items.length} items.`);
+
+                if (items.length > 0) {
+                    const safeName = session.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    const fileName = `${safeName}_${Date.now()}.txt`;
+                    const fileContent = formatOutput(items, session.name);
+                    const filePath = path.join(dumpDir, fileName);
+                    fs.writeFileSync(filePath, fileContent);
+                    console.log(`  💾 Saved to: ${filePath}`);
                 }
             }
         }
 
-        // 3. Extract
-        console.log('📜 Extracting history...');
-        const { items } = await getStructuredHistory(extractionSource);
-        console.log(`  ✅ Extracted ${items.length} items.`);
-
-        if (items.length > 0) {
-            const fileName = `dump_${Date.now()}.txt`;
-            const fileContent = items.map(i => `[${i.type.toUpperCase()}]\n${i.content}`).join('\n\n----------------\n\n');
-            const filePath = path.join(dumpDir, fileName);
-            fs.writeFileSync(filePath, fileContent);
-            console.log(`  💾 Saved to: ${filePath}`);
-        } else {
-            console.warn('  ⚠️ No content found. Dumping frame HTML to debug...');
-            const html = await extractionSource.content();
-            const debugPath = path.join(dumpDir, 'debug_browser_mode.html');
-            fs.writeFileSync(debugPath, html);
-            console.log(`  💾 Saved HTML dump to: ${debugPath}`);
-        }
+        console.log('\n✅ Dump complete.');
 
     } catch (error) {
         console.error('🔥 Fatal error:', error);
     } finally {
         if (browser) await browser.close();
     }
+}
+
+function formatOutput(items: { type: string; content: string }[], sessionName?: string): string {
+    let output = '';
+
+    if (sessionName) {
+        output += `Session: ${sessionName}\n`;
+        output += `Date: ${new Date().toISOString()}\n`;
+        output += `Items: ${items.length}\n`;
+        output += `${'='.repeat(50)}\n\n`;
+    }
+
+    for (const item of items) {
+        let prefix = '';
+        switch (item.type) {
+            case 'user': prefix = '👤 [USER]'; break;
+            case 'agent': prefix = '🤖 [AGENT]'; break;
+            case 'thought': prefix = '🤔 [THOUGHT]'; break;
+            case 'tool-call': prefix = '🛠️ [TOOL CALL]'; break;
+            case 'tool-output': prefix = '📝 [TOOL OUTPUT]'; break;
+            default: prefix = `[${item.type.toUpperCase()}]`;
+        }
+        output += `${prefix}\n${item.content}\n\n${'─'.repeat(40)}\n\n`;
+    }
+
+    return output;
 }
 
 main();
