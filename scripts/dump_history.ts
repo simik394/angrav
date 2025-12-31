@@ -183,6 +183,12 @@ function formatOutput(items: { type: string; content: string }[], sessionName?: 
             case 'code': prefix = '💻 [CODE]'; break;
             case 'file-change': prefix = '📁 [FILE CHANGE]'; break;
             case 'terminal': prefix = '💲 [TERMINAL]'; break;
+            case 'task-status': prefix = '🎯 [TASK STATUS]'; break;
+            case 'file-link': prefix = '🔗 [FILE LINK]'; break;
+            case 'approval': prefix = '✅ [APPROVAL]'; break;
+            case 'error': prefix = '❌ [ERROR]'; break;
+            case 'image': prefix = '🖼️ [IMAGE]'; break;
+            case 'table': prefix = '📊 [TABLE]'; break;
             default: prefix = `[${item.type.toUpperCase()}]`;
         }
         output += `${prefix}\n${item.content}\n\n${'─'.repeat(40)}\n\n`;

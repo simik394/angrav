@@ -291,9 +291,75 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                 // TOOL RESULT BUTTONS - "Show JavaScript Result" etc.
                 if (el.tagName === 'BUTTON' &&
                     el.textContent?.includes('JavaScript Result')) {
-                    const text = el.textContent?.trim() || '';
-                    const key = `result:${text.substring(0, 80)}`;
-                    items.push({ type: 'tool-result', content: text, key });
+                    const btnText = el.textContent?.trim() || '';
+                    const key = `result:${btnText.substring(0, 80)}`;
+                    items.push({ type: 'tool-result', content: btnText, key });
+                }
+
+                // TASK STATUS - Planning/Executing/Verifying phase indicators
+                if ((el.tagName === 'BUTTON' || el.tagName === 'DIV') &&
+                    el.textContent) {
+                    const statusText = el.textContent.trim();
+                    const phases = ['Planning', 'Executing', 'Verifying', 'PLANNING', 'EXECUTION', 'VERIFICATION'];
+                    const startsWithPhase = phases.some(p => statusText.startsWith(p));
+                    if (startsWithPhase && 
+                        statusText.length < 50 &&
+                        !statusText.includes('=>') &&
+                        !statusText.includes('includes')) {
+                        const key = `status:${statusText.substring(0, 80)}`;
+                        items.push({ type: 'task-status', content: statusText, key });
+                    }
+                }
+
+                // FILE LINKS - clickable file paths
+                if ((el.tagName === 'SPAN' || el.tagName === 'A' || el.tagName === 'BDI') &&
+                    el.className?.includes && el.className.includes('cursor-pointer')) {
+                    const linkText = el.textContent?.trim() || '';
+                    // Must look like a file path
+                    if ((linkText.includes('/') || /\.[a-z]{2,4}$/i.test(linkText)) &&
+                        linkText.length > 3 && linkText.length < 200) {
+                        const key = `filelink:${linkText.substring(0, 80)}`;
+                        items.push({ type: 'file-link', content: linkText, key });
+                    }
+                }
+
+                // APPROVAL BUTTONS - Accept/Reject user decision points
+                if (el.tagName === 'BUTTON') {
+                    const btnText = el.textContent?.trim() || '';
+                    if (['Accept', 'Reject', 'Accept all', 'Reject all', 'Run', 'Cancel'].some(w => btnText.includes(w)) &&
+                        btnText.length < 50) {
+                        const key = `approval:${btnText}`;
+                        items.push({ type: 'approval', content: btnText, key });
+                    }
+                }
+
+                // ERROR MESSAGES - elements with red text/background classes
+                const elClass = el.className?.toString() || '';
+                if (elClass.includes('text-red-') || elClass.includes('bg-red-') || elClass.includes('border-red-')) {
+                    const errText = el.textContent?.trim() || '';
+                    if (errText.length > 5 && errText.length < 500) {
+                        const key = `error:${errText.substring(0, 80)}`;
+                        items.push({ type: 'error', content: errText, key });
+                    }
+                }
+
+                // IMAGES - non-icon images (likely attachments/screenshots)
+                if (el.tagName === 'IMG') {
+                    const img = el as HTMLImageElement;
+                    if (img.width > 50 && img.height > 50 && !img.src.includes('profile')) {
+                        const content = `[Image: ${img.src.split('/').pop() || 'image'}] (${img.width}x${img.height})`;
+                        const key = `image:${img.src.substring(0, 80)}`;
+                        items.push({ type: 'image', content, key });
+                    }
+                }
+
+                // TABLES - markdown/HTML tables
+                if (el.tagName === 'TABLE') {
+                    const tableText = el.textContent?.trim() || '';
+                    if (tableText.length > 10) {
+                        const key = `table:${tableText.substring(0, 80)}`;
+                        items.push({ type: 'table', content: tableText, key });
+                    }
                 }
             });
 
