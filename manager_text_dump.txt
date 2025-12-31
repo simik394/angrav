@@ -1,0 +1,18 @@
+Agent Manager
+Recent
+01-pwf.code-workspace
+/home/sim/Obsi/Prods/01-pwf/maps/01-pwf.code-workspace
+01-pwf
+/home/sim/Obsi/Prods/01-pwf
+05-Prago
+/home/sim/Obsi/Prods/05-Prago
+02-pwf.code-workspace
+/home/sim/Obsi/Prods/01-pwf/maps/02-pwf.code-workspace
+angrav
+/home/sim/Obsi/Prods/01-pwf/agents/angrav
+logic-driven-iac [[Remote]]
+/workspaces/logic-driven-iac
+04-škola
+/home/sim/Obsi/Prods/04-škola
+infrastruct
+/home/sim/Obsi/Prods/01-pwf/infrastruct

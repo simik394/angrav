@@ -23,7 +23,14 @@ export async function openAgentManager(context: BrowserContext): Promise<Manager
 
     const pages = context.pages();
 
-    // Find main workbench (not jetski-agent)
+    // 1. Check if already open (Manager or Launchpad)
+    let managerPage = pages.find(p => p.url().includes('workbench-jetski-agent.html'));
+    if (managerPage) {
+        console.log(`✅ Agent Manager already open (Title: "${await managerPage.title()}").`);
+        return { page: managerPage, frame: managerPage.mainFrame() };
+    }
+
+    // 2. Find main workbench to open it
     const workbenchPage = pages.find(p =>
         p.url().includes('workbench.html') &&
         !p.url().includes('jetski-agent')
@@ -36,20 +43,27 @@ export async function openAgentManager(context: BrowserContext): Promise<Manager
     // Try clicking the "Open Agent Manager" button
     const openBtn = workbenchPage.locator('.open-agent-manager-button, button:has-text("Open Agent Manager")').first();
 
-    if (await openBtn.count() > 0 && await openBtn.isVisible()) {
-        console.log('✅ Found "Open Agent Manager" button, clicking...');
-        await openBtn.click();
+    if (await openBtn.count() > 0) {
+        console.log('✅ Found "Open Agent Manager" button, clicking (forced)...');
+        await openBtn.click({ force: true, timeout: 5000 }).catch(() => {
+            console.log('⚠️ Click failed, trying keyboard shortcut...');
+            return workbenchPage.keyboard.press('Control+e');
+        });
     } else {
         // Fallback to keyboard shortcut
         console.log('⌨️ Using Ctrl+E to open Agent Manager...');
         await workbenchPage.keyboard.press('Control+e');
     }
 
-    await workbenchPage.waitForTimeout(1000);
-
-    // Find the jetski-agent page (Agent Manager window)
-    const updatedPages = context.pages();
-    let managerPage = updatedPages.find(p => p.url().includes('workbench-jetski-agent.html'));
+    // Wait for page with timeout
+    console.log('⏳ Waiting for Agent Manager window to appear...');
+    managerPage = await context.waitForEvent('page', { 
+        predicate: p => p.url().includes('workbench-jetski-agent.html'),
+        timeout: 10000 
+    }).catch(() => {
+        // Fallback: check all pages again
+        return context.pages().find(p => p.url().includes('workbench-jetski-agent.html'));
+    });
 
     if (!managerPage) {
         throw new Error('Agent Manager window not found after opening.');

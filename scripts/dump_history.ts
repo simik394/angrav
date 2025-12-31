@@ -4,21 +4,86 @@ import * as path from 'path';
 import { chromium } from '@playwright/test';
 import { getStructuredHistory, listSessions, switchSession } from '../src/session';
 import { getAgentFrame } from '../src/core';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const CDP_ENDPOINT = process.env.BROWSER_CDP_ENDPOINT || 'http://localhost:9222';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+// Token counting with Gemini
+async function countTokensWithGemini(text: string): Promise<number | null> {
+    if (!GEMINI_API_KEY) {
+        console.log('  ⚠️ GEMINI_API_KEY not set, skipping token count');
+        return null;
+    }
+    try {
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.countTokens(text);
+        return result.totalTokens;
+    } catch (error) {
+        console.log(`  ⚠️ Token count failed: ${error}`);
+        return null;
+    }
+}
+
+// State tracking for incremental scrapes
+interface ScrapeState {
+    sessionId: string;
+    lastItemCount: number;
+    lastItemKey: string;
+    lastTimestamp: string;
+}
+
+function getStateDir(): string {
+    const stateDir = path.resolve(process.cwd(), 'history_dump', '.scrape_state');
+    if (!fs.existsSync(stateDir)) {
+        fs.mkdirSync(stateDir, { recursive: true });
+    }
+    return stateDir;
+}
+
+function getStateFilePath(sessionId: string): string {
+    const safeId = sessionId.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    return path.join(getStateDir(), `${safeId}.json`);
+}
+
+function loadState(sessionId: string): ScrapeState | null {
+    const filePath = getStateFilePath(sessionId);
+    if (fs.existsSync(filePath)) {
+        try {
+            return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        } catch (e) {
+            return null;
+        }
+    }
+    return null;
+}
+
+function saveState(state: ScrapeState): void {
+    const filePath = getStateFilePath(state.sessionId);
+    fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
+}
 
 async function main() {
     const args = process.argv.slice(2);
     const dumpAll = args.includes('--all');
-    const sessionName = args.find(a => !a.startsWith('--'));
+    const incremental = args.includes('--incremental') || args.includes('-i');
+    const fresh = args.includes('--fresh') || args.includes('-f');
+    const showTokens = args.includes('--tokens') || args.includes('-t');
+    const sessionName = args.find(a => !a.startsWith('--') && !a.startsWith('-'));
 
     console.log('🚀 Starting Angrav Session History Dump...');
-    if (dumpAll) {
-        console.log('   Mode: Dump ALL sessions');
-    } else if (sessionName) {
-        console.log(`   Mode: Dump session "${sessionName}"`);
+    if (incremental && !fresh) {
+        console.log('   Mode: INCREMENTAL (new items only)');
     } else {
-        console.log('   Mode: Dump ACTIVE session only');
+        console.log('   Mode: FRESH (full history)');
+    }
+    if (dumpAll) {
+        console.log('   Scope: ALL sessions');
+    } else if (sessionName) {
+        console.log(`   Scope: Session "${sessionName}"`);
+    } else {
+        console.log('   Scope: ACTIVE session only');
     }
 
     const dumpDir = path.resolve(process.cwd(), 'history_dump');
@@ -91,17 +156,64 @@ async function main() {
             console.log('📜 Extracting ACTIVE session...');
 
             const { items } = await getStructuredHistory(agentFrame);
-            console.log(`  ✅ Extracted ${items.length} items.`);
+            console.log(`  ✅ Extracted ${items.length} total items.`);
 
             if (items.length > 0) {
                 // Truncate name to avoid ENAMETOOLONG 
                 let safeName = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'active';
                 if (safeName.length > 80) safeName = safeName.substring(0, 80);
-                const fileName = `${safeName}_${Date.now()}.txt`;
-                const fileContent = formatOutput(items);
-                const filePath = path.join(dumpDir, fileName);
-                fs.writeFileSync(filePath, fileContent);
-                console.log(`  💾 Saved to: ${filePath}`);
+
+                // Handle incremental mode
+                let itemsToSave = items;
+                let suffix = '';
+
+                if (incremental && !fresh) {
+                    const prevState = loadState(safeName);
+                    if (prevState) {
+                        console.log(`  📊 Previous state: ${prevState.lastItemCount} items from ${prevState.lastTimestamp}`);
+
+                        // Find items after the last known key
+                        const lastKeyIndex = items.findIndex((item: any) => item.key === prevState.lastItemKey);
+                        if (lastKeyIndex >= 0) {
+                            itemsToSave = items.slice(lastKeyIndex + 1);
+                            console.log(`  🔍 Found ${itemsToSave.length} new items since last scrape.`);
+                        } else {
+                            // Key not found - maybe session changed, do full
+                            console.log(`  ⚠️ Previous key not found, including all items.`);
+                        }
+                        suffix = '_incr';
+                    } else {
+                        console.log(`  📊 No previous state found, will save full history.`);
+                    }
+                }
+
+                // Save new state
+                const lastItem = items[items.length - 1] as any;
+                saveState({
+                    sessionId: safeName,
+                    lastItemCount: items.length,
+                    lastItemKey: lastItem?.key || '',
+                    lastTimestamp: new Date().toISOString()
+                });
+
+                if (itemsToSave.length > 0) {
+                    const fileName = `${safeName}${suffix}_${Date.now()}.txt`;
+                    const fileContent = formatOutput(itemsToSave);
+                    const filePath = path.join(dumpDir, fileName);
+                    fs.writeFileSync(filePath, fileContent);
+                    console.log(`  💾 Saved ${itemsToSave.length} items to: ${filePath}`);
+
+                    // Token counting
+                    if (showTokens) {
+                        console.log(`  🔢 Counting tokens with Gemini...`);
+                        const tokenCount = await countTokensWithGemini(fileContent);
+                        if (tokenCount !== null) {
+                            console.log(`  📊 Token count: ${tokenCount.toLocaleString()} tokens`);
+                        }
+                    }
+                } else {
+                    console.log(`  ℹ️ No new items to save.`);
+                }
             } else {
                 console.warn('  ⚠️ No content found.');
             }

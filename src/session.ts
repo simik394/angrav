@@ -119,6 +119,7 @@ export type MessageType = 'user' | 'agent' | 'thought' | 'tool-call' | 'tool-out
 export interface StructuredMessage {
     type: MessageType;
     content: string;
+    key?: string;
     metadata?: Record<string, any>;
 }
 
@@ -302,7 +303,7 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                     const statusText = el.textContent.trim();
                     const phases = ['Planning', 'Executing', 'Verifying', 'PLANNING', 'EXECUTION', 'VERIFICATION'];
                     const startsWithPhase = phases.some(p => statusText.startsWith(p));
-                    if (startsWithPhase && 
+                    if (startsWithPhase &&
                         statusText.length < 50 &&
                         !statusText.includes('=>') &&
                         !statusText.includes('includes')) {
@@ -503,9 +504,10 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
         console.log(`  📥 Final extraction at top: +${topNewCount} items`);
     }
 
-    const items: StructuredMessage[] = allItems.map(({ type, content }) => ({
+    const items: StructuredMessage[] = allItems.map(({ type, content, key }) => ({
         type: type as StructuredMessage['type'],
-        content
+        content,
+        key
     }));
 
     console.log(`  ✅ Total items extracted: ${items.length}`);
