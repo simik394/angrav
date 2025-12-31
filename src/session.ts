@@ -146,6 +146,7 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
     }
 
     // 1. Extract THOUGHTS - buttons with "Thought for Xs"
+    // Click to expand and get full content
     const thoughtButtons = chatContainer.locator('button:has-text("Thought for")');
     const thoughtCount = await thoughtButtons.count();
     console.log(`  Found ${thoughtCount} thought blocks.`);
@@ -153,7 +154,29 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
     for (let i = 0; i < thoughtCount; i++) {
         const btn = thoughtButtons.nth(i);
         const btnText = await btn.innerText().catch(() => 'Thought');
-        items.push({ type: 'thought', content: btnText });
+
+        // Click to expand the thought
+        try {
+            await btn.click({ timeout: 1000 });
+            await frame.waitForTimeout(300); // Wait for animation
+
+            // Now look for the expanded content (div with pl-6 class near the button)
+            // The expanded content appears in a sibling div
+            const expandedContent = chatContainer.locator('div.pl-6').nth(i);
+            const thoughtText = await expandedContent.innerText({ timeout: 1000 }).catch(() => '');
+
+            // Click again to collapse (cleanup)
+            await btn.click({ timeout: 500 }).catch(() => { });
+
+            if (thoughtText.trim()) {
+                items.push({ type: 'thought', content: `${btnText}\n${thoughtText}` });
+            } else {
+                items.push({ type: 'thought', content: btnText });
+            }
+        } catch {
+            // If click fails, just use the button text
+            items.push({ type: 'thought', content: btnText });
+        }
     }
 
     // 2. Extract TOOL CALLS - look for spans with title attribute inside div.animate-fade-in
