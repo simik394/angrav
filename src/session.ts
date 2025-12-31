@@ -125,110 +125,77 @@ export interface StructuredMessage {
 export interface StructuredHistory {
     items: StructuredMessage[];
 }
+
 /**
  * Retrieves structured conversation history, attempting to distinguish tools and thoughts.
- * Updated selectors based on Jan 2025 DOM inspection.
+ * Extracts in DOM order to maintain chronological sequence.
  */
 export async function getStructuredHistory(frame: Frame): Promise<StructuredHistory> {
     console.log('📜 Fetching structured history...');
-    const items: StructuredMessage[] = [];
 
-    // The chat is inside an element with id="cascade" or id="chat"
-    let chatContainer = frame.locator('#cascade, #chat').first();
+    // Use JavaScript evaluation to extract all elements in DOM order
+    const rawItems = await frame.evaluate(() => {
+        const items: Array<{ type: string; content: string; order: number }> = [];
 
-    if (await chatContainer.count() === 0) {
-        chatContainer = frame.locator('[class*="chat"], [class*="message"]').first();
-    }
+        const chatContainer = document.querySelector('#cascade, #chat, [class*="chat"]');
+        if (!chatContainer) return items;
 
-    if (await chatContainer.count() === 0) {
-        console.log('  ⚠️ Could not find chat container.');
-        return { items };
-    }
+        // Get all relevant elements and track their DOM position
+        const allElements = chatContainer.querySelectorAll('*');
+        let order = 0;
 
-    // 1. Extract THOUGHTS - buttons with "Thought for Xs"
-    // Click to expand and get full content
-    const thoughtButtons = chatContainer.locator('button:has-text("Thought for")');
-    const thoughtCount = await thoughtButtons.count();
-    console.log(`  Found ${thoughtCount} thought blocks.`);
-
-    for (let i = 0; i < thoughtCount; i++) {
-        const btn = thoughtButtons.nth(i);
-        const btnText = await btn.innerText().catch(() => 'Thought');
-
-        // Click to expand the thought
-        try {
-            await btn.click({ timeout: 1000 });
-            await frame.waitForTimeout(300); // Wait for animation
-
-            // Now look for the expanded content (div with pl-6 class near the button)
-            // The expanded content appears in a sibling div
-            const expandedContent = chatContainer.locator('div.pl-6').nth(i);
-            const thoughtText = await expandedContent.innerText({ timeout: 1000 }).catch(() => '');
-
-            // Click again to collapse (cleanup)
-            await btn.click({ timeout: 500 }).catch(() => { });
-
-            if (thoughtText.trim()) {
-                items.push({ type: 'thought', content: `${btnText}\n${thoughtText}` });
-            } else {
-                items.push({ type: 'thought', content: btnText });
+        allElements.forEach((el) => {
+            // THOUGHT buttons
+            if (el.tagName === 'BUTTON' && el.textContent?.includes('Thought for')) {
+                const btnText = el.textContent.trim();
+                // Try to get expanded content from next sibling
+                const parent = el.parentElement;
+                const expandedDiv = parent?.querySelector('div.pl-6, div[class*="overflow"]');
+                const expandedText = expandedDiv?.textContent?.trim() || '';
+                items.push({
+                    type: 'thought',
+                    content: expandedText ? `${btnText}\n${expandedText}` : btnText,
+                    order: order++
+                });
             }
-        } catch {
-            // If click fails, just use the button text
-            items.push({ type: 'thought', content: btnText });
-        }
-    }
 
-    // 2. Extract TOOL CALLS - look for spans with title attribute inside div.animate-fade-in
-    const toolTitles = chatContainer.locator('div.animate-fade-in span.truncate[title]');
-    const toolCount = await toolTitles.count();
-    console.log(`  Found ${toolCount} tool calls.`);
+            // TOOL CALLS - spans with title inside animate-fade-in
+            if (el.tagName === 'SPAN' &&
+                el.classList.contains('truncate') &&
+                el.hasAttribute('title') &&
+                el.closest('div.animate-fade-in')) {
+                const title = el.getAttribute('title');
+                if (title && !items.some(i => i.content === title)) {
+                    items.push({ type: 'tool-call', content: title, order: order++ });
+                }
+            }
 
-    for (let i = 0; i < toolCount; i++) {
-        const span = toolTitles.nth(i);
-        const title = await span.getAttribute('title').catch(() => null);
-        if (title) {
-            items.push({ type: 'tool-call', content: title });
-        }
-    }
+            // PROSE blocks (agent responses)
+            if (el.classList.contains('prose')) {
+                const text = el.textContent?.trim() || '';
+                // Skip if too short or is inside a thought
+                if (text.length > 20 && !el.closest('button') && !el.closest('div.pl-6')) {
+                    // Avoid duplicates
+                    const key = text.substring(0, 100);
+                    if (!items.some(i => i.content.substring(0, 100) === key)) {
+                        items.push({ type: 'agent', content: text, order: order++ });
+                    }
+                }
+            }
+        });
 
-    // 3. Extract PROSE blocks (agent responses)
-    const proseBlocks = chatContainer.locator('.prose');
-    const proseCount = await proseBlocks.count();
-    console.log(`  Found ${proseCount} prose blocks.`);
-
-    for (let i = 0; i < proseCount; i++) {
-        const block = proseBlocks.nth(i);
-        const text = await block.innerText().catch(() => '');
-        if (!text.trim() || text.length < 10) continue;
-        items.push({ type: 'agent', content: text });
-    }
-
-    // 4. Extract USER messages - span.text-ide-text-color with short text
-    const userSpans = chatContainer.locator('span.text-ide-text-color');
-    const userCount = await userSpans.count();
-
-    for (let i = 0; i < userCount; i++) {
-        const el = userSpans.nth(i);
-        const text = await el.innerText().catch(() => '');
-
-        if (!text.trim() || text.length < 5 || text.length > 200) continue;
-        if (['Ask anything', 'Add context', 'Planning', 'Model', 'Thought'].some(ui => text.includes(ui))) continue;
-
-        items.push({ type: 'user', content: text });
-    }
-
-    // Deduplicate (sometimes nested elements cause duplicates)
-    const seen = new Set<string>();
-    const dedupedItems = items.filter(item => {
-        const key = item.content.substring(0, 100);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
+        return items;
     });
 
-    console.log(`  Total unique items: ${dedupedItems.length}`);
-    return { items: dedupedItems };
+    // Sort by DOM order and remove the order field
+    rawItems.sort((a, b) => a.order - b.order);
+    const items: StructuredMessage[] = rawItems.map(({ type, content }) => ({
+        type: type as StructuredMessage['type'],
+        content
+    }));
+
+    console.log(`  Found ${items.length} items in chronological order.`);
+    return { items };
 }
 
 export interface SessionInfo {
