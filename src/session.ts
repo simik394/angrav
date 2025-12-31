@@ -157,13 +157,18 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                     items.push({ type: 'thought', content, key });
                 }
 
-                // TOOL CALLS
-                if (el.tagName === 'SPAN' &&
-                    el.classList.contains('truncate') &&
-                    el.hasAttribute('title') &&
-                    el.closest('div.animate-fade-in')) {
+                // TOOL CALLS - look for spans with title attribute that contain tool names
+                // Filter by: must have a title, title looks like a tool name (has word breaks)
+                if (el.tagName === 'SPAN' && el.hasAttribute('title')) {
                     const title = el.getAttribute('title');
-                    if (title) {
+                    // Skip very short titles, or titles that look like prose/content
+                    // Tool names are typically 2-5 words like "Retrieved Browser Pages"
+                    if (title &&
+                        title.length >= 5 &&
+                        title.length <= 60 &&
+                        /^[A-Z][a-zA-Z]/.test(title) &&  // Starts with capital
+                        title.split(' ').length >= 2 &&
+                        title.split(' ').length <= 8) {
                         const key = `tool:${title}`;
                         items.push({ type: 'tool-call', content: title, key });
                     }

@@ -164,12 +164,18 @@ function formatOutput(items: { type: string; content: string }[], sessionName?: 
     }
 
     for (const item of items) {
+        // Skip items with empty content
+        if (!item.content || item.content.trim().length === 0) continue;
+
         let prefix = '';
         switch (item.type) {
             case 'user': prefix = '👤 [USER]'; break;
             case 'agent': prefix = '🤖 [AGENT]'; break;
             case 'thought': prefix = '🤔 [THOUGHT]'; break;
-            case 'tool-call': prefix = '🛠️ [TOOL CALL]'; break;
+            case 'tool-call':
+                // Put tool name on same line as prefix
+                output += `🛠️ [TOOL CALL] ${item.content}\n\n${'─'.repeat(40)}\n\n`;
+                continue;
             case 'tool-output': prefix = '📝 [TOOL OUTPUT]'; break;
             default: prefix = `[${item.type.toUpperCase()}]`;
         }
