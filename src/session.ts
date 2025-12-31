@@ -148,6 +148,25 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
             count++;
         }
 
+        // Also expand "Thought for ..." buttons
+        const thoughtButtons = Array.from(document.querySelectorAll('button'))
+            .filter(el => el.textContent?.includes('Thought for'));
+
+        for (const btn of thoughtButtons) {
+            // Check if it looks collapsed (check for sibling content)
+            // This is a heuristic: if next text sibling isn't visible or parent doesn't show expanded content
+            // For now, we'll assume they start collapsed or we can just click them.
+            // Better heuristic: Check if the expanded content div is present nearby.
+            const parent = btn.parentElement;
+            const expandedContent = parent?.querySelector('div.pl-6, div[class*="overflow"]');
+
+            // If we don't see the expanded content div, click it
+            if (!expandedContent || window.getComputedStyle(expandedContent).display === 'none') {
+                (btn as HTMLElement).click();
+                count++;
+            }
+        }
+
         return count;
     });
 
