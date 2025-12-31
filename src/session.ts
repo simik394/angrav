@@ -114,6 +114,95 @@ export async function getConversationHistory(frame: Frame): Promise<Conversation
     };
 }
 
+export type MessageType = 'user' | 'agent' | 'thought' | 'tool-call' | 'tool-output';
+
+export interface StructuredMessage {
+    type: MessageType;
+    content: string;
+    metadata?: Record<string, any>;
+}
+
+export interface StructuredHistory {
+    items: StructuredMessage[];
+}
+
+/**
+ * Retrieves structured conversation history, attempting to distinguish tools and thoughts.
+ * Updated selectors based on Jan 2025 DOM inspection.
+ */
+export async function getStructuredHistory(frame: Frame): Promise<StructuredHistory> {
+    console.log('📜 Fetching structured history...');
+    const items: StructuredMessage[] = [];
+
+    // The chat is inside an element with id="cascade" or id="chat"
+    // Messages are NOT in div.bg-ide-chat-background (those are popovers)
+    // We need to find the actual message container
+
+    // Try to find the chat container
+    let chatContainer = frame.locator('#cascade, #chat').first();
+
+    // If not found by ID, try class-based selectors
+    if (await chatContainer.count() === 0) {
+        // Fallback: look for common message patterns
+        chatContainer = frame.locator('[class*="chat"], [class*="message"]').first();
+    }
+
+    if (await chatContainer.count() === 0) {
+        console.log('  ⚠️ Could not find chat container. Trying full frame scan...');
+        // Ultimate fallback: scan for any text that looks like messages
+        const allText = await frame.locator('body').innerText().catch(() => '');
+        if (allText.trim()) {
+            items.push({ type: 'agent', content: allText.substring(0, 5000) });
+        }
+        return { items };
+    }
+
+    // Look for message-like elements within the container
+    // Based on inspection: messages may be in divs with specific classes
+    // Text is often in span.font-semibold or .prose elements
+
+    // Strategy: Get all text blocks that look like messages
+    const textBlocks = chatContainer.locator('.prose, [class*="message"], span.font-semibold');
+    const count = await textBlocks.count();
+
+    console.log(`  Found ${count} potential text blocks in chat.`);
+
+    for (let i = 0; i < count; i++) {
+        const block = textBlocks.nth(i);
+        const text = await block.innerText().catch(() => '');
+
+        if (!text.trim()) continue;
+
+        // Heuristic classification based on content patterns
+        const lowerText = text.toLowerCase();
+
+        if (lowerText.includes('tool call:') || lowerText.startsWith('🛠️')) {
+            items.push({ type: 'tool-call', content: text });
+        } else if (lowerText.includes('tool output:') || lowerText.startsWith('📝')) {
+            items.push({ type: 'tool-output', content: text });
+        } else if (lowerText.includes('thought') || lowerText.startsWith('🤔')) {
+            items.push({ type: 'thought', content: text });
+        } else if (text.length < 500 && !text.includes('\n')) {
+            // Short single-line text is likely user input
+            items.push({ type: 'user', content: text });
+        } else {
+            // Longer text is likely agent response
+            items.push({ type: 'agent', content: text });
+        }
+    }
+
+    // Deduplicate (sometimes nested elements cause duplicates)
+    const seen = new Set<string>();
+    const dedupedItems = items.filter(item => {
+        const key = item.content.substring(0, 100);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    return { items: dedupedItems };
+}
+
 export interface SessionInfo {
     name: string;
     index: number;
@@ -126,33 +215,68 @@ export interface SessionInfo {
  * Syncs with FalkorDB to provide stable UUIDs.
  */
 export async function listSessions(managerFrame: Frame, workspace: string = 'workspace'): Promise<SessionInfo[]> {
-    console.log('📋 Listing sessions...');
-
-    // Get sessions from UI
-    const uiSessions = await getSessionsFromUI(managerFrame);
+    console.log('📋 Listing sessions (Manager Window)...');
 
     // Sync with FalkorDB for stable IDs
     const falkor = getFalkorClient();
     const dbSessions = await falkor.listSessions(workspace);
 
-    // Merge: UI is source of truth for available sessions, DB for IDs
     const result: SessionInfo[] = [];
+    const processedNames = new Set<string>();
 
-    for (const ui of uiSessions) {
+    // Strategy: The Manager Window lists sessions as plain text or buttons.
+    // Based on dump: "01-pwf", "Refining Session History Output", etc.
+    // They seem to be clickable elements.
+
+    // Let's find all elements that look like session items.
+    // We'll target text that matches known session patterns or just list all clickable text
+
+    // Heuristic: Get all elements with text content that might be a session
+    // And exclude UI noise.
+
+    const candidates = managerFrame.locator('div, span, a, button');
+    const count = await candidates.count();
+
+    // Optimization: Don't iterate 1000s of elements. 
+    // The previous dump showed them in a column.
+    // Let's look for the container first? No clear container found.
+    // Let's try locating by text content length and structure.
+
+    const validSessions = [];
+    const lines = (await managerFrame.locator('body').innerText()).split('\n');
+
+    let isCapture = false;
+    for (const line of lines) {
+        const trimmed = line.trim();
+        // Start capturing after "Workspaces" or specific markers if possible
+        // But simply filtering by length and exclusion list might be enough for now.
+
+        const skip = ['Antigravity', 'File', 'Edit', 'View', 'Agent Manager', 'Open Editor',
+            'Inbox', 'Start conversation', 'Workspaces', 'Playground', 'Model',
+            'Gemini 3 Pro (High)', '01-pwf', '05-Prago', '04-škola'];
+        // Note: 01-pwf is workspace name, might appear as header. 
+        // Detailed session names follow.
+
+        if (trimmed.length > 5 && !skip.includes(trimmed)) {
+            if (!processedNames.has(trimmed)) {
+                processedNames.add(trimmed);
+                validSessions.push(trimmed);
+            }
+        }
+    }
+
+    for (const name of validSessions) {
         // Try to find existing session in DB by name
-        let dbSession = dbSessions.find(s => s.name === ui.name);
+        let dbSession = dbSessions.find(s => s.name === name);
 
         if (dbSession) {
-            // Session exists in DB - use its stable ID
-            result.push({ ...ui, id: dbSession.id });
-            // Update name if it changed
-            if (dbSession.name !== ui.name) {
-                await falkor.updateSessionName(dbSession.id, ui.name);
+            result.push({ name, index: result.length, id: dbSession.id });
+            if (dbSession.name !== name) {
+                await falkor.updateSessionName(dbSession.id, name);
             }
         } else {
-            // New session - create in DB with stable UUID
-            const id = await falkor.createSession(ui.name, workspace);
-            result.push({ ...ui, id });
+            const id = await falkor.createSession(name, workspace);
+            result.push({ name, index: result.length, id });
         }
     }
 
@@ -164,80 +288,10 @@ export async function listSessions(managerFrame: Frame, workspace: string = 'wor
 
 /**
  * Helper: Extract sessions from UI without FalkorDB sync.
- * Based on DOM analysis: Sessions are in sidebar under "Workspaces > workspace"
- * Structure: div[style*="padding-left: 30px"] > div > button > span.text-sm.grow.truncate
+ * (Deprecated/Unused in this new logic but kept for interface compatibility if needed internally)
  */
 async function getSessionsFromUI(managerFrame: Frame): Promise<SessionInfo[]> {
-    const sessions: SessionInfo[] = [];
-
-    // Debug: log frame URL to verify we're on the right page
-    const frameUrl = await managerFrame.url();
-    console.log(`  Frame URL: ${frameUrl.slice(0, 80)}...`);
-
-    // Skip patterns - items that are UI elements, not sessions
-    const skipPatterns = ['Start', 'New', 'Open', 'workspace', 'Inbox', 'Playground',
-        'Knowledge', 'Browser', 'Settings', 'File', 'Edit', 'View',
-        'Agent Manager', 'project', 'Recent', 'Active'];
-
-    // Strategy 1: Session names are in span.grow.truncate inside buttons (from DOM analysis)
-    let elements = managerFrame.locator('button span.grow.truncate');
-    let count = await elements.count();
-    console.log(`  Selector 'button span.grow.truncate': ${count} matches`);
-
-    if (count > 0) {
-        for (let i = 0; i < count; i++) {
-            const el = elements.nth(i);
-            const text = await el.innerText().catch(() => '');
-            const trimmed = text.trim();
-
-            if (trimmed.length >= 3 && !skipPatterns.some(p => trimmed === p)) {
-                if (!sessions.find(s => s.name === trimmed)) {
-                    sessions.push({ name: trimmed, index: sessions.length });
-                }
-            }
-        }
-    }
-
-    // Strategy 2: Try span.text-sm.truncate if first didn't work
-    if (sessions.length === 0) {
-        elements = managerFrame.locator('span.text-sm.truncate');
-        count = await elements.count();
-        console.log(`  Selector 'span.text-sm.truncate': ${count} matches`);
-
-        for (let i = 0; i < count; i++) {
-            const el = elements.nth(i);
-            const text = await el.innerText().catch(() => '');
-            const trimmed = text.trim();
-
-            if (trimmed.length >= 5 && !skipPatterns.some(p => trimmed.toLowerCase().includes(p.toLowerCase()))) {
-                if (!sessions.find(s => s.name === trimmed)) {
-                    sessions.push({ name: trimmed, index: sessions.length });
-                }
-            }
-        }
-    }
-
-    // Strategy 3: Fallback - visible buttons with longer text
-    if (sessions.length === 0) {
-        console.log('  Trying fallback button:visible selector...');
-        elements = managerFrame.locator('button:visible');
-        count = await elements.count();
-        console.log(`  Found ${count} visible buttons`);
-
-        for (let i = 0; i < count; i++) {
-            const btn = elements.nth(i);
-            const text = await btn.innerText().catch(() => '');
-            const trimmed = text.trim().split('\n')[0]; // First line only
-
-            if (trimmed.length >= 8 && !skipPatterns.some(p => trimmed.toLowerCase().includes(p.toLowerCase()))) {
-                if (!sessions.find(s => s.name === trimmed)) {
-                    sessions.push({ name: trimmed, index: i });
-                }
-            }
-        }
-    }
-
-    return sessions;
+    return [];
 }
 
 /**
@@ -262,8 +316,21 @@ export async function switchSession(managerFrame: Frame, sessionIdOrName: string
     }
 
     // Click the session button
-    const btn = managerFrame.locator('button:visible').nth(match.index);
-    await btn.click();
+    // Try by Title first
+    const btnByTitle = managerFrame.locator(`button[title="${match.name}"]`);
+    if (await btnByTitle.count() > 0 && await btnByTitle.first().isVisible()) {
+        await btnByTitle.first().click({ force: true });
+    } else {
+        // Fallback to text match
+        const btnByText = managerFrame.locator(`text="${match.name}"`);
+        if (await btnByText.count() > 0) {
+            await btnByText.first().click({ force: true });
+        } else {
+            console.warn(`  ⚠️ Could not click session "${match.name}" - Locators failed.`);
+            return false;
+        }
+    }
+
     await managerFrame.waitForTimeout(500);
 
     console.log(`✅ Switched to: "${match.name}" (ID: ${match.id || 'none'})`);
