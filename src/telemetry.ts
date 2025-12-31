@@ -11,6 +11,9 @@
  * Complements observability.ts which handles chat completions API.
  */
 
+import * as dotenv from 'dotenv';
+dotenv.config(); // Load .env file
+
 import { Langfuse, LangfuseTraceClient, LangfuseSpanClient } from 'langfuse';
 
 // ============================================================================
