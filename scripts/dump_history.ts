@@ -94,7 +94,9 @@ async function main() {
             console.log(`  ✅ Extracted ${items.length} items.`);
 
             if (items.length > 0) {
-                const safeName = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'active';
+                // Truncate name to avoid ENAMETOOLONG 
+                let safeName = pageTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'active';
+                if (safeName.length > 80) safeName = safeName.substring(0, 80);
                 const fileName = `${safeName}_${Date.now()}.txt`;
                 const fileContent = formatOutput(items);
                 const filePath = path.join(dumpDir, fileName);

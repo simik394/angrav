@@ -174,6 +174,26 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                     }
                 }
 
+                // USER MESSAGES - look for .whitespace-pre-wrap with word-break style
+                // These are inside bg-gray-500/15 containers
+                if (el.classList.contains('whitespace-pre-wrap')) {
+                    const style = el.getAttribute('style') || '';
+                    // User input has word-break: break-word style
+                    if (style.includes('word-break')) {
+                        const text = el.textContent?.trim() || '';
+                        // User messages are actual sentences/questions
+                        // Skip very short or CSS-looking content
+                        if (text.length > 10 &&
+                            !text.includes('{') &&  // Skip CSS
+                            !text.includes('class=') &&  // Skip HTML
+                            !text.startsWith('.') && // Skip selectors
+                            text.split(' ').length >= 2) {
+                            const key = `user:${text.substring(0, 80)}`;
+                            items.push({ type: 'user', content: text, key });
+                        }
+                    }
+                }
+
                 // PROSE blocks
                 if (el.classList.contains('prose')) {
                     const text = el.textContent?.trim() || '';
