@@ -451,11 +451,49 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
     }
     console.log(`  📥 Initial extraction at bottom: ${allItems.length} items`);
 
-    // Smaller scroll steps = more extraction points = better chance to capture expanded content
     const scrollStep = 250;
     const maxScrolls = Math.ceil(scrollInfo.height / scrollStep) + 10;
 
-    console.log(`  🔄 Scrolling UP from bottom, ~${maxScrolls} iterations`);
+    // === PASS 1: Expand all Progress Updates sections ===
+    console.log(`  🔓 PASS 1: Expanding all Progress Updates...`);
+    for (let i = 0; i < maxScrolls; i++) {
+        const targetPos = Math.max(0, scrollInfo.height - (i + 1) * scrollStep);
+        await frame.evaluate((target: number) => {
+            const candidates = document.querySelectorAll('.overflow-y-auto');
+            for (const el of candidates) {
+                const elem = el as HTMLElement;
+                if (elem.scrollHeight > elem.clientHeight + 100) {
+                    elem.scrollTop = target;
+                    break;
+                }
+            }
+        }, targetPos);
+        await frame.waitForTimeout(100);
+        await expandCollapsedSections(frame);
+
+        // Check if reached top
+        const pos = await frame.evaluate(() => {
+            const el = document.querySelector('.overflow-y-auto') as HTMLElement;
+            return el?.scrollTop || 0;
+        });
+        if (pos <= 10) break;
+    }
+
+    // Scroll back to bottom for extraction pass
+    await frame.evaluate(() => {
+        const candidates = document.querySelectorAll('.overflow-y-auto');
+        for (const el of candidates) {
+            const elem = el as HTMLElement;
+            if (elem.scrollHeight > elem.clientHeight + 100) {
+                elem.scrollTop = elem.scrollHeight;
+                break;
+            }
+        }
+    });
+    await frame.waitForTimeout(500);
+
+    // === PASS 2: Extract content ===
+    console.log(`  🔄 PASS 2: Extracting content (scrolling UP), ~${maxScrolls} iterations`);
 
     let lastScrollTop = scrollInfo.height;
     let samePositionCount = 0;
