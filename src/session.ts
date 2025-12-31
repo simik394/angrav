@@ -451,8 +451,8 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
     }
     console.log(`  📥 Initial extraction at bottom: ${allItems.length} items`);
 
-    // Scroll upward in increments
-    const scrollStep = 500;
+    // Smaller scroll steps = more extraction points = better chance to capture expanded content
+    const scrollStep = 250;
     const maxScrolls = Math.ceil(scrollInfo.height / scrollStep) + 10;
 
     console.log(`  🔄 Scrolling UP from bottom, ~${maxScrolls} iterations`);
