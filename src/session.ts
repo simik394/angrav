@@ -258,6 +258,36 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                     }
                 }
 
+                // TERMINAL COMMANDS - lines with $ prompt followed by command
+                // Format: ~/path $ command
+                const text = el.textContent?.trim() || '';
+                if (el.tagName === 'DIV' &&
+                    /^~\/[^\s]*\s+\$\s+\S+/.test(text) &&
+                    text.length < 500 &&
+                    !text.includes('[TOOL CALL]') &&
+                    !text.includes('Background Steps') &&
+                    !text.includes('Running') &&
+                    !text.includes('Relocate') &&
+                    text.length > 15) {
+
+                    // Try to find the associated output (usually next pre element)
+                    let outputText = '';
+                    const nextSibling = el.nextElementSibling;
+                    if (nextSibling?.tagName === 'PRE') {
+                        outputText = nextSibling.textContent?.trim() || '';
+                        // Limit output size
+                        if (outputText.length > 1000) {
+                            outputText = outputText.substring(0, 1000) + '\n... (truncated)';
+                        }
+                    }
+
+                    const fullContent = outputText
+                        ? `${text}\n\`\`\`\n${outputText}\n\`\`\``
+                        : text;
+                    const key = `terminal:${text.substring(0, 80)}`;
+                    items.push({ type: 'terminal', content: fullContent, key });
+                }
+
                 // TOOL RESULT BUTTONS - "Show JavaScript Result" etc.
                 if (el.tagName === 'BUTTON' &&
                     el.textContent?.includes('JavaScript Result')) {

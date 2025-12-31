@@ -182,6 +182,7 @@ function formatOutput(items: { type: string; content: string }[], sessionName?: 
             case 'tool-result': prefix = '📊 [TOOL RESULT]'; break;
             case 'code': prefix = '💻 [CODE]'; break;
             case 'file-change': prefix = '📁 [FILE CHANGE]'; break;
+            case 'terminal': prefix = '💲 [TERMINAL]'; break;
             default: prefix = `[${item.type.toUpperCase()}]`;
         }
         output += `${prefix}\n${item.content}\n\n${'─'.repeat(40)}\n\n`;
