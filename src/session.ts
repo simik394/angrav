@@ -153,7 +153,7 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
 
     if (expandedCount > 0) {
         console.log(`  🔓 Expanded ${expandedCount} Progress Updates`);
-        await frame.waitForTimeout(400);
+        await frame.waitForTimeout(800); // Longer wait for expanded content to render
     }
 
     return expandedCount;
