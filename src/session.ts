@@ -128,6 +128,35 @@ export interface StructuredHistory {
 }
 
 /**
+ * Expands Progress Updates sections only.
+ * Clicks "Expand all" buttons near "Progress Updates" headers.
+ */
+async function expandCollapsedSections(frame: Frame): Promise<number> {
+    const expandedCount = await frame.evaluate(() => {
+        let count = 0;
+
+        // Only click "Expand all" buttons (not "Collapse all")
+        // These are specifically for Progress Updates sections
+        const expandButtons = Array.from(document.querySelectorAll('span'))
+            .filter(el => el.textContent?.trim() === 'Expand all' &&
+                el.getAttribute('role') === 'button');
+
+        for (const btn of expandButtons) {
+            (btn as HTMLElement).click();
+            count++;
+        }
+
+        return count;
+    });
+
+    if (expandedCount > 0) {
+        await frame.waitForTimeout(300);
+    }
+
+    return expandedCount;
+}
+
+/**
  * Retrieves structured conversation history, attempting to distinguish tools and thoughts.
  * Uses progressive scroll to handle virtualized content in the chat UI.
  */
@@ -406,6 +435,9 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
     });
     await frame.waitForTimeout(800);
 
+    // Expand collapsed sections before extracting
+    await expandCollapsedSections(frame);
+
     // Extract from bottom first
     const bottomItems = await extractVisibleItems();
     for (const item of bottomItems) {
@@ -448,6 +480,9 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
 
         // Wait for content to render
         await frame.waitForTimeout(600);
+
+        // Expand any collapsed sections before extraction
+        await expandCollapsedSections(frame);
 
         // Extract visible items
         const visibleItems = await extractVisibleItems();
