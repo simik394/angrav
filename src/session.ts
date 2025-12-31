@@ -1,5 +1,8 @@
 import { Frame } from '@playwright/test';
-import { getFalkorClient, Session as FalkorSession } from '@agents/shared';
+import { getFalkorClient, Session as FalkorSession, getAngravTelemetry } from '@agents/shared';
+
+// Get telemetry instance
+const telemetry = getAngravTelemetry();
 
 export interface ConversationMessage {
     role: 'user' | 'agent';
@@ -19,16 +22,27 @@ export interface ConversationHistory {
 export async function startNewConversation(frame: Frame): Promise<void> {
     console.log('🔄 Starting new conversation...');
 
+    // Start trace for new conversation
+    const trace = telemetry.startTrace('session:new-conversation');
+
     // Selector from ANTIGRAVITY_FEATURES.md and specs
     const btn = frame.locator('[data-tooltip-id="new-conversation-tooltip"]');
 
-    if (await btn.isVisible()) {
-        await btn.click();
-        // Wait for potential clearing animation or state change
-        await frame.waitForTimeout(1000);
-        console.log('✅ New conversation started.');
-    } else {
-        throw new Error('New conversation button not found.');
+    try {
+        if (await btn.isVisible()) {
+            await btn.click();
+            // Wait for potential clearing animation or state change
+            await frame.waitForTimeout(1000);
+            console.log('✅ New conversation started.');
+
+            telemetry.endTrace(trace, 'New conversation started', true);
+        } else {
+            throw new Error('New conversation button not found.');
+        }
+    } catch (error) {
+        telemetry.trackError(trace, error as Error);
+        telemetry.endTrace(trace, undefined, false);
+        throw error;
     }
 }
 

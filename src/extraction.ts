@@ -1,4 +1,8 @@
 import { Frame } from '@playwright/test';
+import { getAngravTelemetry, TraceHandle } from '@agents/shared';
+
+// Get telemetry instance
+const telemetry = getAngravTelemetry();
 
 export interface CodeBlock {
     language: string;
@@ -178,15 +182,35 @@ export async function extractAnswer(frame: Frame): Promise<string> {
 
 /**
  * Extracts a complete agent response with all components.
+ * Optionally accepts a trace handle for telemetry.
  */
-export async function extractResponse(frame: Frame): Promise<AgentResponse> {
+export async function extractResponse(frame: Frame, trace?: TraceHandle | null): Promise<AgentResponse> {
     console.log('🔍 Extracting agent response...');
 
+    // Start extraction trace if not provided
+    const extractionTrace = trace || telemetry.startTrace('extraction:response');
+
+    // Track thought extraction
+    const thoughtSpan = telemetry.startThoughtSpan(extractionTrace, 'Extracting agent thoughts');
     const thoughts = await extractThoughts(frame);
+    telemetry.endSpan(thoughtSpan, thoughts || 'No thoughts found');
+
+    // Track code block extraction  
+    const codeSpan = telemetry.startExtractionSpan(extractionTrace, 'code-blocks');
     const codeBlocks = await extractCodeBlocks(frame);
+    telemetry.endSpan(codeSpan, { count: codeBlocks.length, languages: codeBlocks.map(b => b.language) });
+
+    // Track answer extraction
+    const answerSpan = telemetry.startAnswerSpan(extractionTrace);
     const fullText = await extractAnswer(frame);
+    telemetry.endSpan(answerSpan, fullText.substring(0, 200));
 
     console.log(`📋 Extraction complete: ${fullText.length} chars, ${codeBlocks.length} code blocks, thoughts: ${thoughts ? 'yes' : 'no'}`);
+
+    // End trace if we started it
+    if (!trace) {
+        telemetry.endTrace(extractionTrace, `Extracted ${codeBlocks.length} blocks`, true);
+    }
 
     return {
         fullText,

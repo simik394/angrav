@@ -10,6 +10,11 @@
  *   JULES_DEFAULT_SOURCE - Default GitHub repo (e.g., "sources/github/owner/repo")
  */
 
+import { getJulesTelemetry } from '@agents/shared';
+
+// Get telemetry instance
+const telemetry = getJulesTelemetry();
+
 // API Configuration
 const JULES_API_BASE = 'https://jules.googleapis.com/v1alpha';
 const JULES_API_KEY = process.env.JULES_API_KEY || '';
@@ -320,10 +325,23 @@ export async function executeTask(
     const pollInterval = options.pollIntervalMs || 10000; // 10s default
     const timeout = options.timeoutMs || 600000; // 10 min default
 
+    // Start trace for Jules task
+    const trace = telemetry.startTrace('jules:execute-task', {
+        prompt: prompt.substring(0, 100),
+        repo: `${owner}/${repo}`,
+        branch,
+        autoCreatePR
+    });
+
     try {
         // Find source
+        const sourceSpan = telemetry.startToolSpan(trace, 'find-source', { owner, repo });
         const source = await getSource(owner, repo);
+        telemetry.endSpan(sourceSpan, source ? 'Found' : 'Not found', !!source);
+
         if (!source) {
+            telemetry.trackError(trace, `Source not found: ${owner}/${repo}`);
+            telemetry.endTrace(trace, 'Source not found', false);
             return {
                 success: false,
                 sessionId: '',
@@ -333,25 +351,40 @@ export async function executeTask(
         }
 
         // Create session
+        const createSpan = telemetry.startToolSpan(trace, 'create-session', {
+            source: source.name,
+            branch
+        });
         const session = await createSession(prompt, source.name, {
             branch,
             autoCreatePR,
             requirePlanApproval: false
         });
+        telemetry.endSpan(createSpan, { sessionId: session.id });
 
         const sessionUrl = `https://jules.google.com/sessions/${session.id}`;
         console.log(`📋 Session created: ${sessionUrl}`);
 
         // Poll for completion
+        const pollSpan = telemetry.startToolSpan(trace, 'poll-completion', { sessionId: session.id });
         const startTime = Date.now();
+        let pollCount = 0;
+
         while (Date.now() - startTime < timeout) {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
+            pollCount++;
 
             const updated = await getSession(session.id);
 
             if (updated.state === 'COMPLETED') {
                 const response = await getLatestResponse(session.id);
                 const prUrl = updated.outputs?.[0]?.pullRequest?.url;
+
+                telemetry.endSpan(pollSpan, { state: 'COMPLETED', pollCount });
+
+                // Track success score
+                telemetry.addScore(trace, 'success', 1, 'Task completed successfully');
+                telemetry.endTrace(trace, response?.substring(0, 200) || 'Completed', true);
 
                 return {
                     success: true,
@@ -363,6 +396,10 @@ export async function executeTask(
             }
 
             if (updated.state === 'FAILED') {
+                telemetry.endSpan(pollSpan, { state: 'FAILED', pollCount });
+                telemetry.addScore(trace, 'success', 0, 'Session failed');
+                telemetry.endTrace(trace, 'Session failed', false);
+
                 return {
                     success: false,
                     sessionId: session.id,
@@ -375,6 +412,10 @@ export async function executeTask(
         }
 
         // Timeout
+        telemetry.endSpan(pollSpan, { state: 'TIMEOUT', pollCount });
+        telemetry.addScore(trace, 'success', 0, 'Timeout');
+        telemetry.endTrace(trace, `Timeout after ${timeout}ms`, false);
+
         return {
             success: false,
             sessionId: session.id,
@@ -383,6 +424,9 @@ export async function executeTask(
         };
 
     } catch (error) {
+        telemetry.trackError(trace, error as Error);
+        telemetry.endTrace(trace, undefined, false);
+
         return {
             success: false,
             sessionId: '',
