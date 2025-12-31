@@ -138,8 +138,10 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
         // Only click "Expand all" buttons (not "Collapse all")
         // These are specifically for Progress Updates sections
         const expandButtons = Array.from(document.querySelectorAll('span'))
-            .filter(el => el.textContent?.trim() === 'Expand all' &&
-                el.getAttribute('role') === 'button');
+            .filter(el => {
+                const text = el.textContent?.trim() || '';
+                return text === 'Expand all' || text.startsWith('Expand all');
+            });
 
         for (const btn of expandButtons) {
             (btn as HTMLElement).click();
@@ -150,7 +152,8 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
     });
 
     if (expandedCount > 0) {
-        await frame.waitForTimeout(300);
+        console.log(`  🔓 Expanded ${expandedCount} Progress Updates`);
+        await frame.waitForTimeout(400);
     }
 
     return expandedCount;
