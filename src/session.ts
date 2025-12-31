@@ -202,6 +202,42 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                         items.push({ type: 'agent', content: text, key });
                     }
                 }
+
+                // CODE BLOCKS - pre and code elements
+                if (el.tagName === 'PRE' || (el.tagName === 'CODE' && !el.closest('pre'))) {
+                    const text = el.textContent?.trim() || '';
+                    // Skip very small code snippets (likely inline code)
+                    if (text.length > 30) {
+                        const key = `code:${text.substring(0, 80)}`;
+                        items.push({ type: 'code', content: text, key });
+                    }
+                }
+
+                // FILE CHANGE SUMMARIES - elements showing file modifications
+                // Look for patterns like "2 Files With Changes" or file.ts +12 -0
+                if (el.classList.contains('flex') && el.classList.contains('items-center')) {
+                    const text = el.textContent?.trim() || '';
+                    if ((text.includes('Files With Changes') ||
+                        text.includes('File Changed') ||
+                        /\.[a-z]+\s+\+\d+\s+-\d+/.test(text)) &&
+                        text.length < 200) {
+                        const key = `filechange:${text.substring(0, 80)}`;
+                        items.push({ type: 'file-change', content: text, key });
+                    }
+                }
+
+                // TOOL RESULT BUTTONS - "Show JavaScript Result" etc.
+                // Try to get the content if it's expanded
+                if (el.tagName === 'BUTTON' && el.textContent?.includes('JavaScript Result')) {
+                    const text = el.textContent?.trim() || '';
+                    // Look for adjacent content that might be the result
+                    const nextEl = el.nextElementSibling;
+                    const resultContent = nextEl?.textContent?.trim() || '';
+                    const content = resultContent.length > 10 ?
+                        `${text}\n${resultContent}` : text;
+                    const key = `result:${content.substring(0, 80)}`;
+                    items.push({ type: 'tool-result', content, key });
+                }
             });
 
             return items;
