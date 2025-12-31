@@ -214,29 +214,37 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                 }
 
                 // FILE CHANGE SUMMARIES - elements showing file modifications
-                // Look for patterns like "2 Files With Changes" or file.ts +12 -0
-                if (el.classList.contains('flex') && el.classList.contains('items-center')) {
+                // Headers have data-tooltip-id="toolbar-title-tooltip" with "Files With Changes" text
+                // Rows have text-green-500/text-red-500 spans for +/- counts
+                if (el.hasAttribute('data-tooltip-id') &&
+                    el.textContent?.includes('Files With Changes')) {
                     const text = el.textContent?.trim() || '';
-                    if ((text.includes('Files With Changes') ||
-                        text.includes('File Changed') ||
-                        /\.[a-z]+\s+\+\d+\s+-\d+/.test(text)) &&
-                        text.length < 200) {
-                        const key = `filechange:${text.substring(0, 80)}`;
-                        items.push({ type: 'file-change', content: text, key });
+                    const key = `filechange-header:${text}`;
+                    items.push({ type: 'file-change', content: text, key });
+                }
+
+                // File change rows - look for spans with green/red text classes
+                // Using className.includes for better Tailwind class matching
+                const className = el.className?.toString() || '';
+                if (className.includes('text-green-500') || className.includes('text-red-500')) {
+                    const parent = el.parentElement;
+                    if (parent) {
+                        const rowText = parent.textContent?.trim() || '';
+                        // Pattern: + 12 - 0 filename.ts (or similar)
+                        if (/\+\s*\d+/.test(rowText) && /-\s*\d+/.test(rowText) &&
+                            rowText.includes('.') && rowText.length < 150) {
+                            const key = `filechange-row:${rowText.substring(0, 80)}`;
+                            items.push({ type: 'file-change', content: rowText, key });
+                        }
                     }
                 }
 
                 // TOOL RESULT BUTTONS - "Show JavaScript Result" etc.
-                // Try to get the content if it's expanded
-                if (el.tagName === 'BUTTON' && el.textContent?.includes('JavaScript Result')) {
+                if (el.tagName === 'BUTTON' &&
+                    el.textContent?.includes('JavaScript Result')) {
                     const text = el.textContent?.trim() || '';
-                    // Look for adjacent content that might be the result
-                    const nextEl = el.nextElementSibling;
-                    const resultContent = nextEl?.textContent?.trim() || '';
-                    const content = resultContent.length > 10 ?
-                        `${text}\n${resultContent}` : text;
-                    const key = `result:${content.substring(0, 80)}`;
-                    items.push({ type: 'tool-result', content, key });
+                    const key = `result:${text.substring(0, 80)}`;
+                    items.push({ type: 'tool-result', content: text, key });
                 }
             });
 
