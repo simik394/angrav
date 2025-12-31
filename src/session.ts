@@ -158,7 +158,7 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                 }
 
                 // TOOL CALLS - look for spans with title attribute that contain tool names
-                // Filter by: must have a title, title looks like a tool name (has word breaks)
+                // Also try to capture associated code block with arguments
                 if (el.tagName === 'SPAN' && el.hasAttribute('title')) {
                     const title = el.getAttribute('title');
                     // Skip very short titles, or titles that look like prose/content
@@ -169,8 +169,27 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                         /^[A-Z][a-zA-Z]/.test(title) &&  // Starts with capital
                         title.split(' ').length >= 2 &&
                         title.split(' ').length <= 8) {
+
+                        // Try to find associated code block (tool arguments)
+                        // Walk up to find a container, then look for code-block inside
+                        let codeContent = '';
+                        let container = el.parentElement?.parentElement?.parentElement?.parentElement;
+                        if (container) {
+                            const codeBlock = container.querySelector('.code-block');
+                            if (codeBlock) {
+                                codeContent = codeBlock.textContent?.trim() || '';
+                                // Limit code block size to avoid huge extracts
+                                if (codeContent.length > 500) {
+                                    codeContent = codeContent.substring(0, 500) + '...';
+                                }
+                            }
+                        }
+
+                        const fullContent = codeContent
+                            ? `${title}\n\`\`\`\n${codeContent}\n\`\`\``
+                            : title;
                         const key = `tool:${title}`;
-                        items.push({ type: 'tool-call', content: title, key });
+                        items.push({ type: 'tool-call', content: fullContent, key });
                     }
                 }
 
