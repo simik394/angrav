@@ -5,15 +5,24 @@ import { startNewConversation, getConversationHistory, ConversationHistory } fro
 import { output, outputError } from './output';
 import { startServer } from './server';
 import { listCodeChanges, applyAllChanges, applyChangeForFile, readTerminal, undoLastAction, getTerminalLastLines, CodeChange, TerminalOutput } from './execution';
+import { disableTelemetry, isTelemetryEnabled } from './telemetry';
 
 const program = new Command();
 
-// Global --json flag
+// Global flags
 program
     .name('angrav')
     .description('Antigravity Automation CLI')
     .version('0.0.1')
-    .option('--json', 'Output as JSON (machine-readable)', false);
+    .option('--json', 'Output as JSON (machine-readable)', false)
+    .option('--no-telemetry', 'Disable Langfuse telemetry')
+    .hook('preAction', () => {
+        // Handle --no-telemetry flag
+        const opts = program.opts();
+        if (opts.telemetry === false) {
+            disableTelemetry();
+        }
+    });
 
 // Serve command (OpenAI-compatible API server)
 program.command('serve')
