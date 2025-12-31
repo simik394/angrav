@@ -128,73 +128,203 @@ export interface StructuredHistory {
 
 /**
  * Retrieves structured conversation history, attempting to distinguish tools and thoughts.
- * Extracts in DOM order to maintain chronological sequence.
+ * Uses progressive scroll to handle virtualized content in the chat UI.
  */
 export async function getStructuredHistory(frame: Frame): Promise<StructuredHistory> {
-    console.log('📜 Fetching structured history...');
+    console.log('📜 Fetching structured history (with scroll extraction)...');
 
-    // Use JavaScript evaluation to extract all elements in DOM order
-    const rawItems = await frame.evaluate(() => {
-        const items: Array<{ type: string; content: string; order: number }> = [];
+    const allItems: Array<{ type: string; content: string; key: string }> = [];
+    const seenKeys = new Set<string>();
 
-        const chatContainer = document.querySelector('#cascade, #chat, [class*="chat"]');
-        if (!chatContainer) return items;
+    // Helper to extract currently visible items
+    const extractVisibleItems = async () => {
+        return await frame.evaluate(() => {
+            const items: Array<{ type: string; content: string; key: string }> = [];
+            const chatContainer = document.querySelector('#cascade, #chat, [class*="chat"]');
+            if (!chatContainer) return items;
 
-        // Get all relevant elements and track their DOM position
-        const allElements = chatContainer.querySelectorAll('*');
-        let order = 0;
+            const allElements = chatContainer.querySelectorAll('*');
 
-        allElements.forEach((el) => {
-            // THOUGHT buttons
-            if (el.tagName === 'BUTTON' && el.textContent?.includes('Thought for')) {
-                const btnText = el.textContent.trim();
-                // Try to get expanded content from next sibling
-                const parent = el.parentElement;
-                const expandedDiv = parent?.querySelector('div.pl-6, div[class*="overflow"]');
-                const expandedText = expandedDiv?.textContent?.trim() || '';
-                items.push({
-                    type: 'thought',
-                    content: expandedText ? `${btnText}\n${expandedText}` : btnText,
-                    order: order++
-                });
-            }
-
-            // TOOL CALLS - spans with title inside animate-fade-in
-            if (el.tagName === 'SPAN' &&
-                el.classList.contains('truncate') &&
-                el.hasAttribute('title') &&
-                el.closest('div.animate-fade-in')) {
-                const title = el.getAttribute('title');
-                if (title && !items.some(i => i.content === title)) {
-                    items.push({ type: 'tool-call', content: title, order: order++ });
+            allElements.forEach((el) => {
+                // THOUGHT buttons
+                if (el.tagName === 'BUTTON' && el.textContent?.includes('Thought for')) {
+                    const btnText = el.textContent.trim();
+                    const parent = el.parentElement;
+                    const expandedDiv = parent?.querySelector('div.pl-6, div[class*="overflow"]');
+                    const expandedText = expandedDiv?.textContent?.trim() || '';
+                    const content = expandedText ? `${btnText}\n${expandedText}` : btnText;
+                    const key = `thought:${content.substring(0, 80)}`;
+                    items.push({ type: 'thought', content, key });
                 }
-            }
 
-            // PROSE blocks (agent responses)
-            if (el.classList.contains('prose')) {
-                const text = el.textContent?.trim() || '';
-                // Skip if too short or is inside a thought
-                if (text.length > 20 && !el.closest('button') && !el.closest('div.pl-6')) {
-                    // Avoid duplicates
-                    const key = text.substring(0, 100);
-                    if (!items.some(i => i.content.substring(0, 100) === key)) {
-                        items.push({ type: 'agent', content: text, order: order++ });
+                // TOOL CALLS
+                if (el.tagName === 'SPAN' &&
+                    el.classList.contains('truncate') &&
+                    el.hasAttribute('title') &&
+                    el.closest('div.animate-fade-in')) {
+                    const title = el.getAttribute('title');
+                    if (title) {
+                        const key = `tool:${title}`;
+                        items.push({ type: 'tool-call', content: title, key });
                     }
                 }
-            }
-        });
 
-        return items;
+                // PROSE blocks
+                if (el.classList.contains('prose')) {
+                    const text = el.textContent?.trim() || '';
+                    if (text.length > 20 && !el.closest('button') && !el.closest('div.pl-6')) {
+                        const key = `prose:${text.substring(0, 80)}`;
+                        items.push({ type: 'agent', content: text, key });
+                    }
+                }
+            });
+
+            return items;
+        });
+    };
+
+    // Get scroll info - find the actual scrollable chat container
+    const scrollInfo = await frame.evaluate(() => {
+        // Find all potential scrollable containers
+        const candidates = document.querySelectorAll('.overflow-y-auto');
+
+        // Find the one that has actual scrollable content (scrollHeight > clientHeight)
+        for (const el of candidates) {
+            const elem = el as HTMLElement;
+            if (elem.scrollHeight > elem.clientHeight + 100) {
+                return {
+                    height: elem.scrollHeight,
+                    client: elem.clientHeight,
+                    found: true
+                };
+            }
+        }
+
+        return { height: 0, client: 0, found: false };
     });
 
-    // Sort by DOM order and remove the order field
-    rawItems.sort((a, b) => a.order - b.order);
-    const items: StructuredMessage[] = rawItems.map(({ type, content }) => ({
+    if (!scrollInfo.found) {
+        console.log('  ⚠️ No scrollable container found');
+        const items = await extractVisibleItems();
+        return { items: items.map(({ type, content }) => ({ type: type as any, content })) };
+    }
+
+    console.log(`  📏 Scroll height: ${scrollInfo.height}px, viewport: ${scrollInfo.client}px`);
+
+    // REVERSE SCROLL APPROACH: Start at bottom and scroll upward
+    // This works better with virtualized UIs that snap forward
+
+    // First, ensure we're at the bottom
+    await frame.evaluate(() => {
+        const candidates = document.querySelectorAll('.overflow-y-auto');
+        for (const el of candidates) {
+            const elem = el as HTMLElement;
+            if (elem.scrollHeight > elem.clientHeight + 100) {
+                elem.scrollTop = elem.scrollHeight; // Go to bottom
+                break;
+            }
+        }
+    });
+    await frame.waitForTimeout(800);
+
+    // Extract from bottom first
+    const bottomItems = await extractVisibleItems();
+    for (const item of bottomItems) {
+        if (!seenKeys.has(item.key)) {
+            seenKeys.add(item.key);
+            allItems.push(item);
+        }
+    }
+    console.log(`  📥 Initial extraction at bottom: ${allItems.length} items`);
+
+    // Scroll upward in increments
+    const scrollStep = 500;
+    const maxScrolls = Math.ceil(scrollInfo.height / scrollStep) + 10;
+
+    console.log(`  🔄 Scrolling UP from bottom, ~${maxScrolls} iterations`);
+
+    let lastScrollTop = scrollInfo.height;
+    let samePositionCount = 0;
+
+    for (let i = 0; i < maxScrolls; i++) {
+        // Scroll UP by setting explicit position
+        const targetPos = Math.max(0, scrollInfo.height - (i + 1) * scrollStep);
+
+        const scrollResult = await frame.evaluate((target: number) => {
+            const candidates = document.querySelectorAll('.overflow-y-auto');
+            for (const el of candidates) {
+                const elem = el as HTMLElement;
+                if (elem.scrollHeight > elem.clientHeight + 100) {
+                    elem.scrollTop = target;
+                    elem.dispatchEvent(new Event('scroll', { bubbles: true }));
+                    return {
+                        current: elem.scrollTop,
+                        target: target,
+                        reachedTop: elem.scrollTop <= 10
+                    };
+                }
+            }
+            return { current: 0, target: 0, reachedTop: true };
+        }, targetPos) as { current: number; target: number; reachedTop: boolean };
+
+        // Wait for content to render
+        await frame.waitForTimeout(600);
+
+        // Extract visible items
+        const visibleItems = await extractVisibleItems();
+        let newCount = 0;
+        for (const item of visibleItems) {
+            if (!seenKeys.has(item.key)) {
+                seenKeys.add(item.key);
+                allItems.push(item);
+                newCount++;
+            }
+        }
+
+        if (i % 10 === 0 || i < 5 || newCount > 0) {
+            console.log(`    #${i + 1}: target=${targetPos}px, actual=${scrollResult.current}px, +${newCount} items, total=${allItems.length}`);
+        }
+
+        // Check if stuck
+        if (scrollResult.current === lastScrollTop && i > 0) {
+            samePositionCount++;
+            if (samePositionCount >= 3) {
+                console.log(`  ⚠️ Scroll stuck at ${scrollResult.current}px`);
+                break;
+            }
+        } else {
+            samePositionCount = 0;
+            lastScrollTop = scrollResult.current;
+        }
+
+        // Check if reached top
+        if (scrollResult.reachedTop) {
+            console.log(`  ✅ Reached top at iteration ${i + 1}`);
+            break;
+        }
+    }
+
+    // Final extraction at top
+    await frame.waitForTimeout(500);
+    const topItems = await extractVisibleItems();
+    let topNewCount = 0;
+    for (const item of topItems) {
+        if (!seenKeys.has(item.key)) {
+            seenKeys.add(item.key);
+            allItems.push(item);
+            topNewCount++;
+        }
+    }
+    if (topNewCount > 0) {
+        console.log(`  📥 Final extraction at top: +${topNewCount} items`);
+    }
+
+    const items: StructuredMessage[] = allItems.map(({ type, content }) => ({
         type: type as StructuredMessage['type'],
         content
     }));
 
-    console.log(`  Found ${items.length} items in chronological order.`);
+    console.log(`  ✅ Total items extracted: ${items.length}`);
     return { items };
 }
 

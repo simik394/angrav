@@ -90,40 +90,6 @@ async function main() {
         if (sessionsToProcess.length === 0) {
             console.log('📜 Extracting ACTIVE session...');
 
-            // Scroll to top of chat to load all messages
-            console.log('  📜 Scrolling to load full history...');
-            try {
-                await agentFrame.evaluate(() => {
-                    const chatContainer = document.querySelector('#cascade, #chat');
-                    if (chatContainer) {
-                        chatContainer.scrollTop = 0;
-                    }
-                });
-                await editorPage.waitForTimeout(500);
-
-                // Scroll down gradually to load virtualized content
-                for (let i = 0; i < 10; i++) {
-                    await agentFrame.evaluate(() => {
-                        const chatContainer = document.querySelector('#cascade, #chat');
-                        if (chatContainer) {
-                            chatContainer.scrollTop += 2000;
-                        }
-                    });
-                    await editorPage.waitForTimeout(200);
-                }
-
-                // Scroll back to top
-                await agentFrame.evaluate(() => {
-                    const chatContainer = document.querySelector('#cascade, #chat');
-                    if (chatContainer) {
-                        chatContainer.scrollTop = 0;
-                    }
-                });
-                await editorPage.waitForTimeout(300);
-            } catch (e) {
-                console.log('  ⚠️ Scroll failed, extracting visible content only.');
-            }
-
             const { items } = await getStructuredHistory(agentFrame);
             console.log(`  ✅ Extracted ${items.length} items.`);
 
