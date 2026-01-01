@@ -399,6 +399,30 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                     }
                 }
 
+                // TOOL CALL ARGUMENTS - JSON-like content near "Used tool" sections
+                // Look for pre/code blocks that contain JSON object structure
+                if ((el.tagName === 'PRE' || el.tagName === 'CODE') &&
+                    el.textContent?.includes('"') && el.textContent?.includes(':')) {
+                    const text = el.textContent?.trim() || '';
+                    // Check if it looks like JSON object or has tool call patterns
+                    if ((text.startsWith('{') || text.includes('TargetFile') || text.includes('CommandLine')) &&
+                        text.length > 50 && text.length < 5000) {
+                        // Avoid duplicates with regular code blocks
+                        const key = `toolarg:${text.substring(0, 100)}`;
+                        items.push({ type: 'tool-call-arg', content: text, key });
+                    }
+                }
+
+                // TIMESTAMPS - look for time elements or relative time strings
+                if (el.tagName === 'TIME' ||
+                    (el.tagName === 'SPAN' && /^(\\d+ (seconds?|minutes?|hours?) ago|\\d{1,2}:\\d{2}( [AP]M)?|Today|Yesterday)$/i.test(el.textContent?.trim() || ''))) {
+                    const timeText = el.textContent?.trim() || '';
+                    if (timeText.length > 0 && timeText.length < 30) {
+                        const key = `timestamp:${timeText}`;
+                        items.push({ type: 'timestamp', content: timeText, key });
+                    }
+                }
+
                 // CODE BLOCKS - pre and code elements (but filter out CSS artifacts)
                 if (el.tagName === 'PRE' || (el.tagName === 'CODE' && !el.closest('pre'))) {
                     const text = el.textContent?.trim() || '';

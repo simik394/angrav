@@ -402,6 +402,14 @@ function formatOutput(items: any[], sessionName?: string) {
                 // Expanded diff content with actual code changes
                 output += `### 📝 File Diff\n\`\`\`diff\n${content}\n\`\`\`\n\n`;
                 break;
+            case 'tool-call-arg':
+                // Tool call arguments (JSON-like)
+                output += `### 🔧 Tool Args\n\`\`\`json\n${content}\n\`\`\`\n\n`;
+                break;
+            case 'timestamp':
+                // Timestamp marker
+                output += `*⏱️ ${content}*\n\n`;
+                break;
             case 'file-activity':
                 // e.g. "Edited session.ts"
                 let icon = '📄';
