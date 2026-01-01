@@ -35,7 +35,7 @@ job "angrav" {
 
       resources {
         cpu    = 200
-        memory = 1024
+        memory = 512
       }
 
       service {
