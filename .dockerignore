@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output (will be built in container)
+dist/
+
+# Development files
+.env
+.env.*
+*.log
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Project-specific generated files
+history_dump/
+cdp_targets/
+*.html
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in runtime)
+docs/
+*.md
+!README.md
+
+# Tests (not needed in production image)
+tests/
+
+# Windmill scripts (deployed separately)
+windmill/
+
+# Debug scripts
+scrape_*.sh
