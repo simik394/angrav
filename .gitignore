@@ -6,3 +6,4 @@ test-results/
 *.log
 dist/
 docker/workspace/
+history_dump/
