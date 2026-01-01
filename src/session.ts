@@ -399,11 +399,20 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                     }
                 }
 
-                // CODE BLOCKS - pre and code elements
+                // CODE BLOCKS - pre and code elements (but filter out CSS artifacts)
                 if (el.tagName === 'PRE' || (el.tagName === 'CODE' && !el.closest('pre'))) {
                     const text = el.textContent?.trim() || '';
                     // Skip very small code snippets (likely inline code)
-                    if (text.length > 30) {
+                    // Also skip CSS artifacts that leak from UI
+                    const isCssArtifact = text.includes('background-color:') ||
+                        text.includes('box-shadow:') ||
+                        text.includes('::selection') ||
+                        text.includes('.code-block') ||
+                        text.includes('.code-line') ||
+                        text.includes('rgba(128 128 128') ||
+                        text.startsWith('.') && text.includes('{');
+
+                    if (text.length > 30 && !isCssArtifact) {
                         const key = `code:${text.substring(0, 80)}`;
                         items.push({ type: 'code', content: text, key });
                     }
@@ -485,7 +494,8 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                     }
                 }
 
-                // FILE LINKS - clickable file paths WITH +/- stats
+                // FILE LINKS - clickable file paths WITH action verb AND +/- stats
+                // Format: "Edited session.ts +38 -3" or "Analyzed core.ts"
                 if ((el.tagName === 'SPAN' || el.tagName === 'A' || el.tagName === 'BDI') &&
                     el.className?.includes && el.className.includes('cursor-pointer')) {
                     const linkText = el.textContent?.trim() || '';
@@ -493,9 +503,66 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                     if ((linkText.includes('/') || /\.[a-z]{2,4}$/i.test(linkText)) &&
                         linkText.length > 3 && linkText.length < 200) {
 
+                        // Try to find action verb (Edited, Analyzed, etc.) from context
+                        let actionVerb = '';
+                        const parent = el.parentElement;
+                        const actionWords = ['Edited', 'Analyzed', 'Viewed', 'Created', 'Deleted', 'Reading', 'Read', 'Writing', 'Wrote'];
+
+                        if (parent) {
+                            // Method 1: Check previous sibling's text
+                            const prevSibling = el.previousElementSibling;
+                            if (prevSibling && !actionVerb) {
+                                const prevText = prevSibling.textContent?.trim() || '';
+                                for (const verb of actionWords) {
+                                    if (prevText === verb || prevText.endsWith(verb)) {
+                                        actionVerb = verb + ' ';
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Method 2: Check parent's full text - extract verb at start
+                            if (!actionVerb) {
+                                const parentText = parent.textContent?.trim() || '';
+                                for (const verb of actionWords) {
+                                    if (parentText.startsWith(verb + ' ') && parentText.includes(linkText)) {
+                                        actionVerb = verb + ' ';
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Method 3: Check grandparent's text (different UI layouts)
+                            if (!actionVerb) {
+                                const grandparent = parent.parentElement;
+                                if (grandparent) {
+                                    const gpText = grandparent.textContent?.trim() || '';
+                                    for (const verb of actionWords) {
+                                        if (gpText.startsWith(verb + ' ') && gpText.includes(linkText)) {
+                                            actionVerb = verb + ' ';
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Method 4: Look at previous sibling at parent level
+                            if (!actionVerb) {
+                                const parentPrevSibling = parent.previousElementSibling;
+                                if (parentPrevSibling) {
+                                    const prevText = parentPrevSibling.textContent?.trim() || '';
+                                    for (const verb of actionWords) {
+                                        if (prevText === verb) {
+                                            actionVerb = verb + ' ';
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Try to find +N -M stats in parent/sibling elements
                         let statsText = '';
-                        const parent = el.parentElement;
                         if (parent) {
                             const greenSpan = parent.querySelector('.text-green-500, [class*="text-green"]');
                             const redSpan = parent.querySelector('.text-red-500, [class*="text-red"]');
@@ -526,7 +593,7 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                             }
                         }
 
-                        const fullContent = linkText + statsText;
+                        const fullContent = actionVerb + linkText + statsText;
                         const key = `filelink:${fullContent.substring(0, 80)}`;
                         items.push({ type: 'file-link', content: fullContent, key });
                     }
