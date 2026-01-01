@@ -15,6 +15,16 @@ export interface AgentResponse {
     thoughts?: string;
     codeBlocks: CodeBlock[];
     timestamp: Date;
+    structuredItems?: Array<{ type: string; content: string; key: string }>;
+}
+
+// Rich structured item (matches session.ts scraping output)
+export interface StructuredItem {
+    type: 'user' | 'agent' | 'thought' | 'code' | 'file-link' | 'file-activity' |
+    'file-change' | 'file-diff' | 'tool-call' | 'tool-call-arg' | 'terminal' |
+    'timestamp' | 'error' | 'image' | 'approval' | 'task-status' | 'table';
+    content: string;
+    key: string;
 }
 
 // Updated selectors based on DOM inspection (2025-12-30)
@@ -205,18 +215,24 @@ export async function extractResponse(frame: Frame, trace?: TraceHandle | null):
     const fullText = await extractAnswer(frame);
     telemetry.endSpan(answerSpan, fullText.substring(0, 200));
 
-    console.log(`📋 Extraction complete: ${fullText.length} chars, ${codeBlocks.length} code blocks, thoughts: ${thoughts ? 'yes' : 'no'}`);
+    // Extract rich structured items (file links, tool calls, etc.)
+    const structuredSpan = telemetry.startExtractionSpan(extractionTrace, 'structured-items');
+    const structuredItems = await extractStructuredItems(frame);
+    telemetry.endSpan(structuredSpan, { count: structuredItems.length });
+
+    console.log(`📋 Extraction complete: ${fullText.length} chars, ${codeBlocks.length} code blocks, ${structuredItems.length} structured items, thoughts: ${thoughts ? 'yes' : 'no'}`);
 
     // End trace if we started it
     if (!trace) {
-        telemetry.endTrace(extractionTrace, `Extracted ${codeBlocks.length} blocks`, true);
+        telemetry.endTrace(extractionTrace, `Extracted ${codeBlocks.length} blocks, ${structuredItems.length} items`, true);
     }
 
     return {
         fullText,
         thoughts,
         codeBlocks,
-        timestamp: new Date()
+        timestamp: new Date(),
+        structuredItems
     };
 }
 
@@ -258,4 +274,130 @@ export async function extractAllMessages(frame: Frame): Promise<Array<{ role: 'u
     }
 
     return messages;
+}
+
+/**
+ * Extracts structured items from the latest agent response.
+ * Provides rich content similar to getStructuredHistory from session.ts.
+ */
+export async function extractStructuredItems(frame: Frame): Promise<Array<{ type: string; content: string; key: string }>> {
+    return await frame.evaluate(() => {
+        const items: Array<{ type: string; content: string; key: string }> = [];
+        const chatContainer = document.querySelector('#cascade, #chat, [class*="chat"]');
+        if (!chatContainer) return items;
+
+        const allElements = chatContainer.querySelectorAll('*');
+
+        allElements.forEach((el) => {
+            // THOUGHT buttons
+            if (el.tagName === 'BUTTON' && el.textContent?.includes('Thought for')) {
+                const btnText = el.textContent.trim();
+                const parent = el.parentElement;
+                const expandedDiv = parent?.querySelector('div.pl-6, div[class*="overflow"]');
+                const expandedText = expandedDiv?.textContent?.trim() || '';
+                const content = expandedText ? `${btnText}\n${expandedText}` : btnText;
+                const key = `thought:${content.substring(0, 80)}`;
+                items.push({ type: 'thought', content, key });
+            }
+
+            // FILE ACTIVITY - "Edited foo.ts +10 -5", "Analyzed bar.ts"
+            if (el.tagName === 'DIV' || el.tagName === 'SPAN') {
+                const text = el.textContent?.trim() || '';
+                const activityMatch = text.match(/^(Edited|Analyzed|Viewed|Reading|Read|Created|Deleted|Wrote)\s+(\S+\.[\w]+)(\s+\+\d+(\s+-\d+)?)?$/);
+                if (activityMatch && text.length < 100) {
+                    const key = `activity:${text.substring(0, 80)}`;
+                    items.push({ type: 'file-activity', content: text, key });
+                }
+            }
+
+            // FILE LINKS - clickable file paths with stats
+            if ((el.tagName === 'SPAN' || el.tagName === 'A' || el.tagName === 'BDI') &&
+                el.className?.includes && el.className.includes('cursor-pointer')) {
+                const linkText = el.textContent?.trim() || '';
+                if ((linkText.includes('/') || /\.[a-z]{2,4}$/i.test(linkText)) &&
+                    linkText.length > 3 && linkText.length < 200) {
+
+                    let actionVerb = '';
+                    let statsText = '';
+                    const parent = el.parentElement;
+
+                    if (parent) {
+                        // Look for verb in ancestor text
+                        const actionWords = ['Edited', 'Analyzed', 'Viewed', 'Created', 'Deleted'];
+                        let ancestor: Element | null = parent;
+                        for (let i = 0; i < 5 && ancestor; i++) {
+                            const ancestorText = ancestor.textContent || '';
+                            if (ancestorText.includes('Files With Changes') || ancestorText.includes('With Changes')) {
+                                actionVerb = 'Edited ';
+                                break;
+                            }
+                            for (const verb of actionWords) {
+                                if (ancestorText.startsWith(verb + ' ')) {
+                                    actionVerb = verb + ' ';
+                                    break;
+                                }
+                            }
+                            if (actionVerb) break;
+                            ancestor = ancestor.parentElement;
+                        }
+
+                        // Look for +/- stats
+                        const greenSpan = parent.querySelector('.text-green-500, [class*="text-green"]');
+                        const redSpan = parent.querySelector('.text-red-500, [class*="text-red"]');
+                        if (greenSpan && redSpan) {
+                            const addCount = greenSpan.textContent?.trim() || '';
+                            const delCount = redSpan.textContent?.trim() || '';
+                            if (addCount.startsWith('+') && delCount.startsWith('-')) {
+                                statsText = ` ${addCount} ${delCount}`;
+                            }
+                        }
+                    }
+
+                    const fullContent = actionVerb + linkText + statsText;
+                    const key = `filelink:${fullContent.substring(0, 80)}`;
+                    items.push({ type: 'file-link', content: fullContent, key });
+                }
+            }
+
+            // TOOL CALLS
+            if (el.tagName === 'SPAN' && el.hasAttribute('title')) {
+                const title = el.getAttribute('title') || '';
+                if (title && title.length >= 5 && title.length <= 60 &&
+                    /^[A-Z][a-zA-Z]/.test(title) &&
+                    title.split(' ').length >= 2 && title.split(' ').length <= 8) {
+                    const key = `tool:${title}`;
+                    items.push({ type: 'tool-call', content: title, key });
+                }
+            }
+
+            // CODE BLOCKS
+            if (el.tagName === 'PRE' || (el.tagName === 'CODE' && !el.closest('pre'))) {
+                const text = el.textContent?.trim() || '';
+                const isCssArtifact = text.includes('background-color:') ||
+                    text.includes('box-shadow:') || text.includes('::selection');
+                if (text.length > 30 && !isCssArtifact) {
+                    const key = `code:${text.substring(0, 80)}`;
+                    items.push({ type: 'code', content: text, key });
+                }
+            }
+
+            // ERRORS
+            const elClass = el.className?.toString() || '';
+            if (elClass.includes('text-red-') || elClass.includes('bg-red-')) {
+                const errText = el.textContent?.trim() || '';
+                if (errText.length > 5 && errText.length < 500) {
+                    const key = `error:${errText.substring(0, 80)}`;
+                    items.push({ type: 'error', content: errText, key });
+                }
+            }
+        });
+
+        // Deduplicate by key
+        const seen = new Set<string>();
+        return items.filter(item => {
+            if (seen.has(item.key)) return false;
+            seen.add(item.key);
+            return true;
+        });
+    });
 }
