@@ -485,15 +485,50 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                     }
                 }
 
-                // FILE LINKS - clickable file paths
+                // FILE LINKS - clickable file paths WITH +/- stats
                 if ((el.tagName === 'SPAN' || el.tagName === 'A' || el.tagName === 'BDI') &&
                     el.className?.includes && el.className.includes('cursor-pointer')) {
                     const linkText = el.textContent?.trim() || '';
                     // Must look like a file path
                     if ((linkText.includes('/') || /\.[a-z]{2,4}$/i.test(linkText)) &&
                         linkText.length > 3 && linkText.length < 200) {
-                        const key = `filelink:${linkText.substring(0, 80)}`;
-                        items.push({ type: 'file-link', content: linkText, key });
+
+                        // Try to find +N -M stats in parent/sibling elements
+                        let statsText = '';
+                        const parent = el.parentElement;
+                        if (parent) {
+                            const greenSpan = parent.querySelector('.text-green-500, [class*="text-green"]');
+                            const redSpan = parent.querySelector('.text-red-500, [class*="text-red"]');
+
+                            if (greenSpan && redSpan) {
+                                const addCount = greenSpan.textContent?.trim() || '';
+                                const delCount = redSpan.textContent?.trim() || '';
+                                if (addCount.startsWith('+') && delCount.startsWith('-')) {
+                                    statsText = ` ${addCount} ${delCount}`;
+                                }
+                            }
+
+                            // Also try grandparent (different UI layouts)
+                            if (!statsText) {
+                                const grandparent = parent.parentElement;
+                                if (grandparent) {
+                                    const greenSpan2 = grandparent.querySelector('.text-green-500, [class*="text-green"]');
+                                    const redSpan2 = grandparent.querySelector('.text-red-500, [class*="text-red"]');
+
+                                    if (greenSpan2 && redSpan2) {
+                                        const addCount = greenSpan2.textContent?.trim() || '';
+                                        const delCount = redSpan2.textContent?.trim() || '';
+                                        if (addCount.startsWith('+') && delCount.startsWith('-')) {
+                                            statsText = ` ${addCount} ${delCount}`;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        const fullContent = linkText + statsText;
+                        const key = `filelink:${fullContent.substring(0, 80)}`;
+                        items.push({ type: 'file-link', content: fullContent, key });
                     }
                 }
 
