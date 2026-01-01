@@ -99,7 +99,8 @@
 |-------|----------|-------|
 | Placeholder selectors in context.ts | `context.ts:66, 166` | Need real DOM analysis |
 | No automated tests | `tests/` missing | Only Playwright test scaffolding |
-| Docker image not in registry | Local only | `angrav-browser:v2` on halvarm |
+| ~~Docker image not in registry~~ | ✅ Fixed | Now in GHCR via CI: `ghcr.io/simik394/osobni_wf/angrav:latest` |
+
 
 ---
 
