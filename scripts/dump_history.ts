@@ -64,6 +64,55 @@ function saveState(state: ScrapeState): void {
     fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
 }
 
+// Deduplicate items by key
+function deduplicateItems(items: Array<{ type: string; content: string; key?: string }>): Array<{ type: string; content: string; key?: string }> {
+    const seen = new Set<string>();
+    return items.filter(item => {
+        const key = item.key || `${item.type}:${item.content.substring(0, 50)}`;
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+}
+
+// Archive old files (older than 7 days)
+function archiveOldFiles(dumpDir: string): number {
+    const archiveDir = path.join(dumpDir, 'archive');
+    if (!fs.existsSync(archiveDir)) {
+        fs.mkdirSync(archiveDir, { recursive: true });
+    }
+
+    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const files = fs.readdirSync(dumpDir).filter(f => f.endsWith('.md'));
+    let archived = 0;
+
+    for (const file of files) {
+        const filePath = path.join(dumpDir, file);
+        const stats = fs.statSync(filePath);
+        if (stats.mtimeMs < sevenDaysAgo) {
+            fs.renameSync(filePath, path.join(archiveDir, file));
+            archived++;
+        }
+    }
+
+    return archived;
+}
+
+// Generate better filename: YYYY-MM-DD_HH-mm_title.md
+function generateFilename(title: string, suffix: string = ''): string {
+    const now = new Date();
+    const datePart = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    const timePart = now.toTimeString().slice(0, 5).replace(':', '-'); // HH-mm
+
+    // Clean and truncate title
+    let safeName = title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'session';
+    if (safeName.length > 40) safeName = safeName.substring(0, 40);
+
+    return `${datePart}_${timePart}_${safeName}${suffix}.md`;
+}
+
 async function main() {
     const args = process.argv.slice(2);
 
@@ -217,11 +266,22 @@ async function main() {
                 });
 
                 if (itemsToSave.length > 0) {
-                    const fileName = `${safeName}${suffix}_${Date.now()}.md`;
-                    const fileContent = formatOutput(itemsToSave);
+                    // Deduplicate items before saving
+                    const dedupedItems = deduplicateItems(itemsToSave);
+                    console.log(`  🧹 Deduplicated: ${itemsToSave.length} → ${dedupedItems.length} items`);
+
+                    // Archive old files before saving new
+                    const archivedCount = archiveOldFiles(dumpDir);
+                    if (archivedCount > 0) {
+                        console.log(`  📁 Archived ${archivedCount} old files`);
+                    }
+
+                    // Use better filename format
+                    const fileName = generateFilename(pageTitle, suffix);
+                    const fileContent = formatOutput(dedupedItems, pageTitle);
                     const filePath = path.join(dumpDir, fileName);
                     fs.writeFileSync(filePath, fileContent);
-                    console.log(`  💾 Saved ${itemsToSave.length} items to: ${filePath}`);
+                    console.log(`  💾 Saved ${dedupedItems.length} items to: ${filePath}`);
 
                     // Token counting
                     if (showTokens) {

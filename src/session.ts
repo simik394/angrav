@@ -32,7 +32,7 @@ export async function startNewConversation(frame: Frame): Promise<void> {
         if (await btn.isVisible()) {
             await btn.click();
             // Wait for potential clearing animation or state change
-            await frame.waitForTimeout(1000);
+            await frame.waitForTimeout(500);
             console.log('✅ New conversation started.');
 
             telemetry.endTrace(trace, 'New conversation started', true);
@@ -285,7 +285,7 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
 
     if (expandedCount > 0) {
         console.log(`  🔓 Expanded ${expandedCount} sections (Progress/Thoughts/Files)`);
-        await frame.waitForTimeout(800); // Longer wait for expanded content to render
+        await frame.waitForTimeout(400); // Wait for expanded content to render
     }
 
     return expandedCount;
@@ -838,7 +838,7 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                 if (el) el.scrollTop = 0;
             });
 
-            await frame.waitForTimeout(1000); // Wait for history loading
+            await frame.waitForTimeout(500); // Wait for history loading
 
             const newHeight = await frame.evaluate(() => document.querySelector('.overflow-y-auto')?.scrollHeight || 0);
 
@@ -886,7 +886,7 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
             return 0;
         }, targetPos);
 
-        await frame.waitForTimeout(400); // Wait for render
+        await frame.waitForTimeout(200); // Wait for render
 
         // Expand visible sections (Thoughts, Progress, Files)
         await expandCollapsedSections(frame);
@@ -1057,7 +1057,7 @@ export async function switchSession(managerFrame: Frame, sessionIdOrName: string
         }
     }
 
-    await managerFrame.waitForTimeout(500);
+    await managerFrame.waitForTimeout(300);
 
     console.log(`✅ Switched to: "${match.name}" (ID: ${match.id || 'none'})`);
     return true;
