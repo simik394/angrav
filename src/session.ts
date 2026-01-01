@@ -167,11 +167,45 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
             }
         }
 
+        // Expand "Files With Changes" sections
+        // Find headers with "Files With Changes"
+        const fileChangeHeaders = Array.from(document.querySelectorAll('*'))
+            .filter(el => el.textContent?.includes('Files With Changes') &&
+                (el.hasAttribute('data-tooltip-id') || el.classList.contains('font-medium')));
+
+        for (const header of fileChangeHeaders) {
+            // Find the container (usually parent or grandparent)
+            const container = header.closest('div.border') || header.parentElement?.parentElement;
+            if (container) {
+                // Find all buttons in this container that might be file toggles
+                // Exclude the header/actions themselves if they are buttons
+                const buttons = Array.from(container.querySelectorAll('button'));
+                for (const btn of buttons) {
+                    // Skip if it looks like a generic action (like "Copy")
+                    // File toggles usually have the filename or a chevron
+                    // Heuristic: Click it if it's not the Expand All button we already clicked
+                    if (!btn.textContent?.includes('Expand all')) {
+                        // Check for aria-expanded if present
+                        if (btn.getAttribute('aria-expanded') === 'false') {
+                            (btn as HTMLElement).click();
+                            count++;
+                        } else if (!btn.hasAttribute('aria-expanded')) {
+                            // Fallback: click if it contains a chevron SVG
+                            if (btn.querySelector('svg')) {
+                                (btn as HTMLElement).click();
+                                count++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return count;
     });
 
     if (expandedCount > 0) {
-        console.log(`  🔓 Expanded ${expandedCount} Progress Updates`);
+        console.log(`  🔓 Expanded ${expandedCount} sections (Progress/Thoughts/Files)`);
         await frame.waitForTimeout(800); // Longer wait for expanded content to render
     }
 
