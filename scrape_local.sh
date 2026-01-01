@@ -17,6 +17,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "  --incremental, -i   Only scrape new items since last run"
     echo "  --fresh, -f         Force full fresh scrape (default)"
     echo "  --tokens, -t        Count tokens using Gemini API"
+    echo "  --limit <px>        Limit scrape depth in pixels (for testing)"
     echo "  --all               Dump all sessions"
     echo "  --help, -h          Show this help message"
     echo ""
