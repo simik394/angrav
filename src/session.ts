@@ -559,6 +559,32 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
                                     }
                                 }
                             }
+
+                            // Method 5: Traverse ancestors looking for group header (e.g. "Files With Changes", "2 Edited Files")
+                            if (!actionVerb) {
+                                let ancestor: Element | null = parent;
+                                for (let i = 0; i < 10 && ancestor; i++) {
+                                    const ancestorText = ancestor.textContent || '';
+                                    // Check for group header patterns
+                                    if (ancestorText.includes('Files With Changes') || ancestorText.includes('With Changes')) {
+                                        actionVerb = 'Edited ';
+                                        break;
+                                    }
+                                    if (ancestorText.includes('Edited Files') || ancestorText.includes('edited files')) {
+                                        actionVerb = 'Edited ';
+                                        break;
+                                    }
+                                    if (ancestorText.includes('Analyzed Files') || ancestorText.includes('analyzed files')) {
+                                        actionVerb = 'Analyzed ';
+                                        break;
+                                    }
+                                    if (ancestorText.includes('Viewed Files') || ancestorText.includes('viewed files')) {
+                                        actionVerb = 'Viewed ';
+                                        break;
+                                    }
+                                    ancestor = ancestor.parentElement;
+                                }
+                            }
                         }
 
                         // Try to find +N -M stats in parent/sibling elements
