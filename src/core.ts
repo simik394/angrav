@@ -26,7 +26,12 @@ export async function connectToApp(cdpUrl?: string): Promise<AppContext> {
         const context = contexts[0];
 
         // Find the main workbench page or agent manager page
-        let page = context.pages().find(p => p.url().includes('workbench.html') || p.url().includes('workbench-jetski-agent.html'));
+        // Prioritize agent manager (Launchpad) if available
+        let page = context.pages().find(p => p.url().includes('workbench-jetski-agent.html'));
+
+        if (!page) {
+            page = context.pages().find(p => p.url().includes('workbench.html'));
+        }
 
         if (!page) {
             console.log('⚠️ Main workbench/manager page not found immediately, checking others or waiting...');
