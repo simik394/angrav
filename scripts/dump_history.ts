@@ -66,11 +66,31 @@ function saveState(state: ScrapeState): void {
 
 async function main() {
     const args = process.argv.slice(2);
+
+
+    // Parse flags
     const dumpAll = args.includes('--all');
     const incremental = args.includes('--incremental') || args.includes('-i');
     const fresh = args.includes('--fresh') || args.includes('-f');
     const showTokens = args.includes('--tokens') || args.includes('-t');
-    const sessionName = args.find(a => !a.startsWith('--') && !a.startsWith('-'));
+
+    // Parse limit
+    const limitArgIndex = args.indexOf('--limit');
+    let limitPx: number | undefined;
+    if (limitArgIndex !== -1 && args[limitArgIndex + 1]) {
+        limitPx = parseInt(args[limitArgIndex + 1], 10);
+    }
+
+    console.log('DEBUG DUMP: raw args:', args);
+    console.log('DEBUG DUMP: parsed limitPx:', limitPx);
+
+    // Parse session name (ignore flags and limit value)
+    const sessionName = args.find((a, i) => {
+        if (a.startsWith('-')) return false;
+        // Ignore the value after --limit
+        if (i > 0 && args[i - 1] === '--limit') return false;
+        return true;
+    });
 
     console.log('🚀 Starting Angrav Session History Dump...');
     if (incremental && !fresh) {
@@ -155,7 +175,7 @@ async function main() {
         if (sessionsToProcess.length === 0) {
             console.log('📜 Extracting ACTIVE session...');
 
-            const { items } = await getStructuredHistory(agentFrame);
+            const { items } = await getStructuredHistory(agentFrame, limitPx);
             console.log(`  ✅ Extracted ${items.length} total items.`);
 
             if (items.length > 0) {
@@ -197,7 +217,7 @@ async function main() {
                 });
 
                 if (itemsToSave.length > 0) {
-                    const fileName = `${safeName}${suffix}_${Date.now()}.txt`;
+                    const fileName = `${safeName}${suffix}_${Date.now()}.md`;
                     const fileContent = formatOutput(itemsToSave);
                     const filePath = path.join(dumpDir, fileName);
                     fs.writeFileSync(filePath, fileContent);
@@ -253,12 +273,12 @@ async function main() {
                 }
 
                 // Extract history
-                const { items } = await getStructuredHistory(agentFrame);
+                const { items } = await getStructuredHistory(agentFrame, limitPx);
                 console.log(`  ✅ Extracted ${items.length} items.`);
 
                 if (items.length > 0) {
                     const safeName = session.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                    const fileName = `${safeName}_${Date.now()}.txt`;
+                    const fileName = `${safeName}_${Date.now()}.md`;
                     const fileContent = formatOutput(items, session.name);
                     const filePath = path.join(dumpDir, fileName);
                     fs.writeFileSync(filePath, fileContent);
@@ -276,43 +296,81 @@ async function main() {
     }
 }
 
-function formatOutput(items: { type: string; content: string }[], sessionName?: string): string {
+function formatOutput(items: any[], sessionName?: string) {
     let output = '';
 
     if (sessionName) {
-        output += `Session: ${sessionName}\n`;
-        output += `Date: ${new Date().toISOString()}\n`;
-        output += `Items: ${items.length}\n`;
-        output += `${'='.repeat(50)}\n\n`;
+        output += `# 🤖 Angrav Session Export: ${sessionName}\n`;
+        output += `**Date:** ${new Date().toISOString()}\n`;
+        output += `**Items:** ${items.length}\n`;
+        output += `---\n\n`;
     }
 
     for (const item of items) {
         // Skip items with empty content
         if (!item.content || item.content.trim().length === 0) continue;
 
-        let prefix = '';
+        let content = item.content.trim();
+
         switch (item.type) {
-            case 'user': prefix = '👤 [USER]'; break;
-            case 'agent': prefix = '🤖 [AGENT]'; break;
-            case 'thought': prefix = '🤔 [THOUGHT]'; break;
+            case 'user':
+                output += `## 👤 User\n${content}\n\n`;
+                break;
+            case 'agent':
+                output += `## 🤖 Agent\n${content}\n\n`;
+                break;
+            case 'thought':
+                output += `> [!NOTE] Thought\n> ${content.replace(/\n/g, '\n> ')}\n\n`;
+                break;
             case 'tool-call':
-                // Put tool name on same line as prefix
-                output += `🛠️ [TOOL CALL] ${item.content}\n\n${'─'.repeat(40)}\n\n`;
-                continue;
-            case 'tool-output': prefix = '📝 [TOOL OUTPUT]'; break;
-            case 'tool-result': prefix = '📊 [TOOL RESULT]'; break;
-            case 'code': prefix = '💻 [CODE]'; break;
-            case 'file-change': prefix = '📁 [FILE CHANGE]'; break;
-            case 'terminal': prefix = '💲 [TERMINAL]'; break;
-            case 'task-status': prefix = '🎯 [TASK STATUS]'; break;
-            case 'file-link': prefix = '🔗 [FILE LINK]'; break;
-            case 'approval': prefix = '✅ [APPROVAL]'; break;
-            case 'error': prefix = '❌ [ERROR]'; break;
-            case 'image': prefix = '🖼️ [IMAGE]'; break;
-            case 'table': prefix = '📊 [TABLE]'; break;
-            default: prefix = `[${item.type.toUpperCase()}]`;
+                output += `### 🛠️ Tool Call\n\`\`\`typescript\n${content}\n\`\`\`\n\n`;
+                break;
+            case 'tool-output':
+                output += `### 📝 Tool Output\n\`\`\`text\n${content}\n\`\`\`\n\n`;
+                break;
+            case 'tool-result':
+                output += `### 📊 Tool Result\n\`\`\`json\n${content}\n\`\`\`\n\n`;
+                break;
+            case 'code':
+                output += `### 💻 Code\n\`\`\`typescript\n${content}\n\`\`\`\n\n`;
+                break;
+            case 'file-change':
+                // Fallback if not caught by file-activity
+                output += `### 📁 File Change\n\`\`\`diff\n${content}\n\`\`\`\n\n`;
+                break;
+            case 'file-diff':
+                // Expanded diff content with actual code changes
+                output += `### 📝 File Diff\n\`\`\`diff\n${content}\n\`\`\`\n\n`;
+                break;
+            case 'file-activity':
+                // e.g. "Edited session.ts"
+                let icon = '📄';
+                if (content.startsWith('Edited')) icon = '✏️';
+                else if (content.startsWith('Analyzed')) icon = '🔍';
+                else if (content.startsWith('Viewed') || content.startsWith('Reading') || content.startsWith('Read')) icon = '👀';
+                else if (content.startsWith('Created')) icon = '✨';
+                else if (content.startsWith('Deleted')) icon = '🗑️';
+
+                output += `### ${icon} ${content}\n\n`;
+                break;
+            case 'terminal':
+                output += `### 💲 Terminal\n\`\`\`bash\n${item.content}\n\`\`\`\n\n`;
+                break;
+            case 'task-status':
+                output += `### 🎯 Task Status\n**${item.content}**\n\n`;
+                break;
+            case 'error':
+                output += `> [!CAUTION] Error\n> ${item.content}\n\n`;
+                break;
+            case 'image':
+                output += `### 🖼️ Image\n![Image](${item.content})\n\n`;
+                break;
+            case 'table':
+                output += `### 📊 Table\n${item.content}\n\n`;
+                break;
+            default:
+                output += `### [${item.type.toUpperCase()}]\n${item.content}\n\n`;
         }
-        output += `${prefix}\n${item.content}\n\n${'─'.repeat(40)}\n\n`;
     }
 
     return output;

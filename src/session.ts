@@ -134,6 +134,8 @@ export interface StructuredHistory {
 async function expandCollapsedSections(frame: Frame): Promise<number> {
     const expandedCount = await frame.evaluate(() => {
         let count = 0;
+        let fileChangeCount = 0;
+        const expandedSet = new Set<Element>();
 
         // Only click "Expand all" buttons (not "Collapse all")
         // These are specifically for Progress Updates sections
@@ -167,38 +169,115 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
             }
         }
 
-        // Expand "Files With Changes" sections
-        // Find headers with "Files With Changes"
-        const fileChangeHeaders = Array.from(document.querySelectorAll('*'))
-            .filter(el => el.textContent?.includes('Files With Changes') &&
-                (el.hasAttribute('data-tooltip-id') || el.classList.contains('font-medium')));
+        // Expand "Used tool" sections
+        const toolButtons = Array.from(document.querySelectorAll('button'))
+            .filter(el => {
+                const text = el.textContent || '';
+                return text.includes('Used tool') || text.includes('Tool Call');
+            });
 
-        for (const header of fileChangeHeaders) {
-            // Find the container (usually parent or grandparent)
-            const container = header.closest('div.border') || header.parentElement?.parentElement;
-            if (container) {
-                // Find all buttons in this container that might be file toggles
-                // Exclude the header/actions themselves if they are buttons
-                const buttons = Array.from(container.querySelectorAll('button'));
-                for (const btn of buttons) {
-                    // Skip if it looks like a generic action (like "Copy")
-                    // File toggles usually have the filename or a chevron
-                    // Heuristic: Click it if it's not the Expand All button we already clicked
-                    if (!btn.textContent?.includes('Expand all')) {
-                        // Check for aria-expanded if present
-                        if (btn.getAttribute('aria-expanded') === 'false') {
-                            (btn as HTMLElement).click();
-                            count++;
-                        } else if (!btn.hasAttribute('aria-expanded')) {
-                            // Fallback: click if it contains a chevron SVG
-                            if (btn.querySelector('svg')) {
-                                (btn as HTMLElement).click();
-                                count++;
-                            }
-                        }
-                    }
-                }
+        for (const btn of toolButtons) {
+            const parent = btn.parentElement;
+            // Similar heuristic: look for the tool call details or code block
+            const codeBlock = parent?.querySelector('pre, code');
+
+            // If no code block visible, click it
+            if (!codeBlock || window.getComputedStyle(codeBlock).display === 'none') {
+                (btn as HTMLElement).click();
+                count++;
             }
+        }
+
+        // Expand "hidden content" placeholders
+        // Text: "The actual output content is hidden until clicked"
+        const hiddenPlaceholders = Array.from(document.querySelectorAll('div, span, p'))
+            .filter(el => {
+                const text = el.textContent || '';
+                return text.includes('content is hidden until clicked') && text.length < 200;
+            });
+
+        for (const el of hiddenPlaceholders) {
+            const clickable = el.closest('button') || el.closest('[role="button"]') || el;
+            // Don't click body
+            if (clickable === document.body) continue;
+
+            if (!expandedSet.has(clickable)) {
+                (clickable as HTMLElement).click();
+                expandedSet.add(clickable);
+                count++;
+            }
+        }
+
+        // Expand "Files With Changes" sections (Aggressive)
+        const fileChangeHeaders = Array.from(document.querySelectorAll('*'))
+            .filter(el => {
+                const text = el.textContent || '';
+                return text.includes('File') && (text.includes('Change') || text.includes('With Changes')) && text.length < 50;
+            });
+
+        if (fileChangeHeaders.length > 0) {
+            console.log(`    🔍 Found ${fileChangeHeaders.length} potential 'Files With Changes' elements.`);
+        }
+
+        for (const el of fileChangeHeaders) {
+            // Avoid clicking things we already clicked
+            if (expandedSet.has(el)) continue;
+
+            // Ensure it's not the "header" of the whole window, but a collapsible item
+            // Usually contained in a border div or distinct block
+
+            // Just click the clickable ancestor
+            const clickable = el.closest('button') || el.closest('[role="button"]') || el;
+
+            if (clickable && !expandedSet.has(clickable)) {
+                const text = el.textContent?.trim().substring(0, 30);
+                const hasChevron = !!clickable.querySelector('svg');
+                const ariaExpanded = clickable.getAttribute('aria-expanded');
+
+                // Don't collapse if already expanded (if we can tell)
+                if (ariaExpanded === 'true') {
+                    expandedSet.add(clickable);
+                    continue;
+                }
+
+                console.log(`      🖱️ Clicking potential file toggle: "${text}..." (Chevron:${hasChevron})`);
+                (clickable as HTMLElement).click();
+                expandedSet.add(clickable);
+                expandedSet.add(el); // Mark both to be safe
+                fileChangeCount++;
+                count++;
+            }
+        }
+
+        // Expand individual file change rows (lines with +N -M stats)
+        const fileRows = Array.from(document.querySelectorAll('div'))
+            .filter(el => {
+                // Must be a row, likely having flex and cursor-pointer
+                const cls = el.className || '';
+                if (!cls.includes || !cls.includes('flex') || !cls.includes('cursor-pointer')) return false;
+
+                // Check if it has the stats (+10 -5)
+                const green = el.querySelector('.text-green-500');
+                const red = el.querySelector('.text-red-500');
+                if (green && red && green.textContent?.trim().startsWith('+') && red.textContent?.trim().startsWith('-')) {
+                    return true;
+                }
+                return false;
+            });
+
+        for (const row of fileRows) {
+            if (expandedSet.has(row)) continue;
+
+            // Blind click for now as we assume they start collapsed in the "Changes" view
+            // and we can't easily detect checking specific aria attributes on these rows usually.
+            // But we can check if there looks like a diff exposed nearby? 
+            // Ideally we'd check if it's already open, but clicking them is the best bet.
+
+            console.log(`      🖱️ Clicking file row: ${row.textContent?.substring(0, 40)}...`);
+            (row as HTMLElement).click();
+            fileChangeCount++;
+            expandedSet.add(row);
+            count++;
         }
 
         return count;
@@ -216,8 +295,9 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
  * Retrieves structured conversation history, attempting to distinguish tools and thoughts.
  * Uses progressive scroll to handle virtualized content in the chat UI.
  */
-export async function getStructuredHistory(frame: Frame): Promise<StructuredHistory> {
+export async function getStructuredHistory(frame: Frame, limitPx?: number): Promise<StructuredHistory> {
     console.log('📜 Fetching structured history (with scroll extraction)...');
+
 
     const allItems: Array<{ type: string; content: string; key: string }> = [];
     const seenKeys = new Set<string>();
@@ -243,10 +323,24 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                     items.push({ type: 'thought', content, key });
                 }
 
+                // FILE ACTIVITY - "Edited foo.ts +10 -5", "Analyzed bar.ts", "Viewed baz.md"
+                if (el.tagName === 'DIV' || el.tagName === 'SPAN') {
+                    const text = el.textContent?.trim() || '';
+                    const parent = el.parentElement;
+                    const className = el.className?.toString() || '';
+
+                    if (className.includes('text-green-500') || className.includes('text-red-500') ||
+                        (text.includes('Files With Changes') && parent?.hasAttribute('data-tooltip-id'))) {
+
+                        const key = `activity:${text.substring(0, 80)}`;
+                        items.push({ type: 'file-activity', content: text, key });
+                    }
+                }
+
                 // TOOL CALLS - look for spans with title attribute that contain tool names
                 // Also try to capture associated code block with arguments
                 if (el.tagName === 'SPAN' && el.hasAttribute('title')) {
-                    const title = el.getAttribute('title');
+                    const title = el.getAttribute('title') || '';
                     // Skip very short titles, or titles that look like prose/content
                     // Tool names are typically 2-5 words like "Retrieved Browser Pages"
                     if (title &&
@@ -441,6 +535,131 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
                         items.push({ type: 'table', content: tableText, key });
                     }
                 }
+
+                // GENERIC DIFF/CODE CAPTURE - for things that don't match strict code blocks
+                // but look like diffs (font-mono, whitespace-pre, containing diff chars)
+                const style = el.getAttribute('style') || '';
+                const isMonospace = el.classList.contains('font-mono') ||
+                    el.classList.contains('whitespace-pre') ||
+                    style.includes('font-family: monospace') ||
+                    style.includes('font-family: Consolas');
+
+                if ((el.tagName === 'DIV' || el.tagName === 'SPAN' || el.tagName === 'PRE') &&
+                    isMonospace &&
+                    el.textContent && el.textContent.length > 20) {
+
+                    const text = el.textContent;
+                    // Check for diff signatures - Relaxed
+                    const isDiff = text.includes('Index: ') ||
+                        text.includes('@@') ||
+                        text.includes('diff --git') ||
+                        (text.includes('\n+') && text.includes('\n-')) ||
+                        // Check for valid diff lines: +..., -..., or context lines (space)
+                        (text.split('\n').slice(0, 10).filter(l => l.startsWith('+') || l.startsWith('-') || l.startsWith(' ')).length > 3);
+
+                    if (isDiff) {
+                        const key = `diff:${text.substring(0, 80)}`;
+                        items.push({ type: 'code', content: text, key });
+                    }
+                }
+
+                // EXPANDED DIFF PANELS - content that appears after clicking file rows
+                // Look for code-block containers with line numbers and colored diff content
+                if (el.classList.contains('code-block') ||
+                    (el.tagName === 'DIV' && el.querySelector('.code-line'))) {
+
+                    // Get all code lines within this block
+                    const codeLines = el.querySelectorAll('.code-line, .line-content, [class*="line"]');
+                    if (codeLines.length > 5) {
+                        // Build the diff content from individual lines
+                        let diffContent = '';
+                        let hasAdditions = false;
+                        let hasDeletions = false;
+
+                        codeLines.forEach((line: Element) => {
+                            const lineText = line.textContent || '';
+                            const lineClass = line.className?.toString() || '';
+                            const parentClass = line.parentElement?.className?.toString() || '';
+
+                            // Check for addition/deletion markers via class or color
+                            if (lineClass.includes('green') || parentClass.includes('green') ||
+                                lineClass.includes('addition') || lineClass.includes('inserted')) {
+                                diffContent += '+' + lineText + '\n';
+                                hasAdditions = true;
+                            } else if (lineClass.includes('red') || parentClass.includes('red') ||
+                                lineClass.includes('deletion') || lineClass.includes('removed')) {
+                                diffContent += '-' + lineText + '\n';
+                                hasDeletions = true;
+                            } else {
+                                diffContent += ' ' + lineText + '\n';
+                            }
+                        });
+
+                        // Only capture if it looks like a real diff
+                        if ((hasAdditions || hasDeletions) && diffContent.length > 50) {
+                            const key = `expanded-diff:${diffContent.substring(0, 80)}`;
+                            items.push({ type: 'file-diff', content: diffContent.trim(), key });
+                        }
+                    }
+                }
+
+                // INLINE DIFF VIEWER - Monaco-style diff with side-by-side or inline changes
+                if (el.classList.contains('monaco-editor') ||
+                    el.classList.contains('diff-editor') ||
+                    el.querySelector('.view-lines')) {
+
+                    const viewLines = el.querySelectorAll('.view-line');
+                    if (viewLines.length > 3) {
+                        let diffText = '';
+                        let foundChanges = false;
+
+                        viewLines.forEach((line: Element) => {
+                            const lineContent = line.textContent || '';
+                            const lineEl = line as HTMLElement;
+                            const bgColor = window.getComputedStyle(lineEl).backgroundColor;
+
+                            // Green-ish background = addition, red-ish = deletion
+                            if (bgColor.includes('rgba(0') && bgColor.includes(', 128') ||
+                                bgColor.includes('rgba(35') || bgColor.includes('#') && bgColor.includes('2')) {
+                                diffText += '+' + lineContent + '\n';
+                                foundChanges = true;
+                            } else if (bgColor.includes('rgba(128') || bgColor.includes('rgba(255')) {
+                                diffText += '-' + lineContent + '\n';
+                                foundChanges = true;
+                            } else if (lineContent.trim()) {
+                                diffText += ' ' + lineContent + '\n';
+                            }
+                        });
+
+                        if (foundChanges && diffText.length > 30) {
+                            const key = `monaco-diff:${diffText.substring(0, 80)}`;
+                            items.push({ type: 'file-diff', content: diffText.trim(), key });
+                        }
+                    }
+                }
+
+                // FILE ACTIVITY - "Edited foo.ts +10 -5", "Analyzed bar.ts", "Viewed baz.md"
+                if (el.tagName === 'DIV' || el.tagName === 'SPAN') {
+                    const text = el.textContent?.trim() || '';
+
+                    // Specific regex for file actions
+                    // Matches: "Edited session.ts +10 -5" or "Analyzed session.ts#L1-10"
+                    const actionRegex = /^(Edited|Analyzed|Viewed|Created|Deleted|Reading|Read)\s+([a-zA-Z0-9_\-\.\/]+)(\.(ts|js|md|py|json|html|css|sh|yaml|yml))(#L?\d+[-:]\d+)?(\s+\+\d+(\s+-\d+)?)?$/;
+
+                    // Also accept slightly looser if it has the verb and a filename extension
+                    // But filter out long sentences ("I Analyzed the file...")
+                    const isFileAction =
+                        (actionRegex.test(text) ||
+                            (/^(Edited|Analyzed|Viewed|Created|Deleted)\s/.test(text) && /\.[a-z]{2,5}/.test(text))) &&
+                        text.length < 80 &&
+                        !text.includes(' I ') && // Not a sentence
+                        !text.endsWith('.'); // Not a sentence
+
+                    if (isFileAction) {
+                        const key = `file-activity:${text}`;
+                        items.push({ type: 'file-activity', content: text, key });
+                    }
+                }
             });
 
             return items;
@@ -475,120 +694,77 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
 
     console.log(`  📏 Scroll height: ${scrollInfo.height}px, viewport: ${scrollInfo.client}px`);
 
-    // REVERSE SCROLL APPROACH: Start at bottom and scroll upward
-    // This works better with virtualized UIs that snap forward
+    // === STRATEGY: Load History (Top) -> Scan Down (Bottom) to ensure correct order and capture ===
 
-    // First, ensure we're at the bottom
-    await frame.evaluate(() => {
-        const candidates = document.querySelectorAll('.overflow-y-auto');
-        for (const el of candidates) {
-            const elem = el as HTMLElement;
-            if (elem.scrollHeight > elem.clientHeight + 100) {
-                elem.scrollTop = elem.scrollHeight; // Go to bottom
-                break;
+    let lastHeight = scrollInfo.height;
+
+    // 1. Force Load History (Scroll to TOP) - ONLY if no limit (or user wants full history)
+    if (!limitPx) {
+        console.log('  ⏳ Loading full history (scrolling to top)...');
+        let stableCount = 0;
+
+        // Try to load history by hitting top repeatedly
+        for (let i = 0; i < 30; i++) {
+            await frame.evaluate(() => {
+                const el = document.querySelector('.overflow-y-auto') as HTMLElement;
+                if (el) el.scrollTop = 0;
+            });
+
+            await frame.waitForTimeout(1000); // Wait for history loading
+
+            const newHeight = await frame.evaluate(() => document.querySelector('.overflow-y-auto')?.scrollHeight || 0);
+
+            if (newHeight > lastHeight + 100) {
+                console.log(`    Height grew: ${lastHeight} -> ${newHeight}px`);
+                lastHeight = newHeight;
+                stableCount = 0;
+            } else {
+                stableCount++;
             }
-        }
-    });
-    await frame.waitForTimeout(800);
 
-    // Expand collapsed sections before extracting
-    await expandCollapsedSections(frame);
-
-    // Extract from bottom first
-    const bottomItems = await extractVisibleItems();
-    for (const item of bottomItems) {
-        if (!seenKeys.has(item.key)) {
-            seenKeys.add(item.key);
-            allItems.push(item);
+            if (stableCount >= 3) break; // Height stable
         }
+    } else {
+        console.log(`  ⏩ Skipping full history load (Limit: ${limitPx}px)`);
+        // We might need to ensure we are at the bottom first to get the true height?
+        // Usually scrollInfo.height is accurate if we are already at bottom (default state).
     }
-    console.log(`  📥 Initial extraction at bottom: ${allItems.length} items`);
 
-    const scrollStep = 250;
-    const maxScrolls = Math.ceil(scrollInfo.height / scrollStep) + 10;
+    // 2. Scan from Start to Bottom
+    // If limitPx is set, start near the bottom. Otherwise start at 0.
+    const startPos = limitPx ? Math.max(0, lastHeight - limitPx) : 0;
 
-    // === PASS 1: Expand all Progress Updates sections ===
-    console.log(`  🔓 PASS 1: Expanding all Progress Updates...`);
-    for (let i = 0; i < maxScrolls; i++) {
-        const targetPos = Math.max(0, scrollInfo.height - (i + 1) * scrollStep);
-        await frame.evaluate((target: number) => {
-            const candidates = document.querySelectorAll('.overflow-y-auto');
-            for (const el of candidates) {
-                const elem = el as HTMLElement;
-                if (elem.scrollHeight > elem.clientHeight + 100) {
-                    elem.scrollTop = target;
-                    break;
-                }
-            }
-        }, targetPos);
-        await frame.waitForTimeout(150);
-        await expandCollapsedSections(frame);
+    console.log(`  📉 Scanning content (Top -> Bottom), height: ${lastHeight}px, starting at ${startPos}px`);
 
-        // Also extract during PASS 1 to catch expanded content before it collapses
-        const visibleItems = await extractVisibleItems();
-        for (const item of visibleItems) {
-            if (!seenKeys.has(item.key)) {
-                seenKeys.add(item.key);
-                allItems.push(item);
-            }
+    const scrollStep = 400; // Safe overlap for ~900px viewport
+    const startIndex = Math.floor(startPos / scrollStep);
+    const maxScrolls = Math.ceil(lastHeight / scrollStep) + 20;
+
+    for (let i = startIndex; i < maxScrolls; i++) {
+        const targetPos = i * scrollStep;
+
+        if (targetPos > lastHeight + 2000) { // Allow some overscroll
+            console.log(`  ✅ Reached bottom.`);
+            break;
         }
 
-        // Check if reached top
-        const pos = await frame.evaluate(() => {
+        // Scroll
+        const currentPos = await frame.evaluate((target: number) => {
             const el = document.querySelector('.overflow-y-auto') as HTMLElement;
-            return el?.scrollTop || 0;
-        });
-        if (pos <= 10) break;
-    }
-    console.log(`  📥 After PASS 1: ${allItems.length} items`);
-
-    // Scroll back to bottom for extraction pass
-    await frame.evaluate(() => {
-        const candidates = document.querySelectorAll('.overflow-y-auto');
-        for (const el of candidates) {
-            const elem = el as HTMLElement;
-            if (elem.scrollHeight > elem.clientHeight + 100) {
-                elem.scrollTop = elem.scrollHeight;
-                break;
+            if (el) {
+                el.scrollTop = target;
+                return el.scrollTop;
             }
-        }
-    });
-    await frame.waitForTimeout(500);
+            return 0;
+        }, targetPos);
 
-    // === PASS 2: Extract content ===
-    console.log(`  🔄 PASS 2: Extracting content (scrolling UP), ~${maxScrolls} iterations`);
+        await frame.waitForTimeout(400); // Wait for render
 
-    let lastScrollTop = scrollInfo.height;
-    let samePositionCount = 0;
-
-    for (let i = 0; i < maxScrolls; i++) {
-        // Scroll UP by setting explicit position
-        const targetPos = Math.max(0, scrollInfo.height - (i + 1) * scrollStep);
-
-        const scrollResult = await frame.evaluate((target: number) => {
-            const candidates = document.querySelectorAll('.overflow-y-auto');
-            for (const el of candidates) {
-                const elem = el as HTMLElement;
-                if (elem.scrollHeight > elem.clientHeight + 100) {
-                    elem.scrollTop = target;
-                    elem.dispatchEvent(new Event('scroll', { bubbles: true }));
-                    return {
-                        current: elem.scrollTop,
-                        target: target,
-                        reachedTop: elem.scrollTop <= 10
-                    };
-                }
-            }
-            return { current: 0, target: 0, reachedTop: true };
-        }, targetPos) as { current: number; target: number; reachedTop: boolean };
-
-        // Wait for content to render
-        await frame.waitForTimeout(600);
-
-        // Expand any collapsed sections before extraction
+        // Expand visible sections (Thoughts, Progress, Files)
         await expandCollapsedSections(frame);
+        // Note: expandCollapsedSections has internal wait if it performs actions
 
-        // Extract visible items
+        // Extract content immediately while expanded
         const visibleItems = await extractVisibleItems();
         let newCount = 0;
         for (const item of visibleItems) {
@@ -599,43 +775,21 @@ export async function getStructuredHistory(frame: Frame): Promise<StructuredHist
             }
         }
 
-        if (i % 10 === 0 || i < 5 || newCount > 0) {
-            console.log(`    #${i + 1}: target=${targetPos}px, actual=${scrollResult.current}px, +${newCount} items, total=${allItems.length}`);
+        if (newCount > 0 || i % 10 === 0) {
+            console.log(`    Step ${i}: pos=${targetPos}px (actual ${currentPos}px), +${newCount} items (total ${allItems.length})`);
         }
 
-        // Check if stuck
-        if (scrollResult.current === lastScrollTop && i > 0) {
-            samePositionCount++;
-            if (samePositionCount >= 3) {
-                console.log(`  ⚠️ Scroll stuck at ${scrollResult.current}px`);
-                break;
-            }
-        } else {
-            samePositionCount = 0;
-            lastScrollTop = scrollResult.current;
-        }
-
-        // Check if reached top
-        if (scrollResult.reachedTop) {
-            console.log(`  ✅ Reached top at iteration ${i + 1}`);
+        // Check if we reached bottom (actual position didn't move past target significantly)
+        // Or if target is way past height
+        if (targetPos > lastHeight + 1000) break;
+        if (i > 5 && currentPos < targetPos - 50) {
+            // We tried to scroll to X but stayed at Y < X
+            // Likely bottom reached
+            console.log(`    Reached bottom at ${currentPos}px`);
             break;
         }
     }
 
-    // Final extraction at top
-    await frame.waitForTimeout(500);
-    const topItems = await extractVisibleItems();
-    let topNewCount = 0;
-    for (const item of topItems) {
-        if (!seenKeys.has(item.key)) {
-            seenKeys.add(item.key);
-            allItems.push(item);
-            topNewCount++;
-        }
-    }
-    if (topNewCount > 0) {
-        console.log(`  📥 Final extraction at top: +${topNewCount} items`);
-    }
 
     const items: StructuredMessage[] = allItems.map(({ type, content, key }) => ({
         type: type as StructuredMessage['type'],
