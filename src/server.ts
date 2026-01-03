@@ -7,7 +7,7 @@ import { streamResponse, StreamChunk } from './streaming';
 import { startNewConversation, switchSession, listSessions } from './session';
 import { openAgentManager, ManagerContext } from './manager';
 import { Frame, Page } from '@playwright/test';
-import { getFalkorClient } from '@agents/shared';
+import { getFalkorClient, shouldBypass, proxyChatCompletion } from '@agents/shared';
 import { SessionRegistry, SessionId, SessionHandle } from './registry';
 import { createSessionEventStream, createSingleSessionEventStream } from './session-stream';
 import { extractResponse as extractFullResponse } from './extraction';
@@ -452,6 +452,19 @@ async function handleChatCompletions(req: http.IncomingMessage, res: http.Server
     if (validationError) {
         sendError(res, 400, validationError);
         return;
+    }
+
+    // Windmill proxy check - route through Windmill unless bypassed
+    if (process.env.WINDMILL_TOKEN && !shouldBypass(req.headers as Record<string, string | string[] | undefined>)) {
+        console.log('[angrav] Routing through Windmill proxy...');
+        try {
+            const result = await proxyChatCompletion('angrav', request);
+            sendJson(res, 200, result);
+            return;
+        } catch (windmillError: any) {
+            console.error('[angrav] Windmill proxy failed:', windmillError.message);
+            // Fall through to direct execution on Windmill failure
+        }
     }
 
     if (request.stream) {
