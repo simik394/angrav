@@ -25,15 +25,35 @@ job "angrav" {
         network_mode = "host"
       }
 
+      # Vault integration for secrets
+      vault {
+        policies = ["agents"]
+      }
+
+      # Inject secrets from Vault as environment variables
+      template {
+        data = <<EOF
+{{- with secret "secret/data/agents/windmill" }}
+WINDMILL_TOKEN={{ .Data.data.token }}
+WINDMILL_URL=http://localhost:8000
+WINDMILL_WORKSPACE=main
+{{- end }}
+{{- with secret "secret/data/agents/langfuse" }}
+LANGFUSE_PUBLIC_KEY={{ .Data.data.public_key }}
+LANGFUSE_SECRET_KEY={{ .Data.data.secret_key }}
+LANGFUSE_HOST=http://localhost:3200
+{{- end }}
+EOF
+        destination = "secrets/vault.env"
+        env         = true
+      }
+
       env {
         PORT = "3031"
         BROWSER_CDP_ENDPOINT = "http://localhost:9224"
         DEBUG = "angrav:*"
         FALKORDB_HOST = "localhost"
-        FALKORDB_PORT = "7687"
-        LANGFUSE_HOST = "http://langfuse.100.73.45.27.nip.io"
-        LANGFUSE_PUBLIC_KEY = "pk-lf-62de1c00-beee-4519-933c-ae4ce2dafbef"
-        LANGFUSE_SECRET_KEY = "sk-lf-825cd051-6ed4-4bb1-8cb2-3576be4d48a2"
+        FALKORDB_PORT = "6379"
       }
 
       resources {
