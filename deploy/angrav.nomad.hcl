@@ -31,6 +31,9 @@ job "angrav" {
         DEBUG = "angrav:*"
         FALKORDB_HOST = "localhost"
         FALKORDB_PORT = "7687"
+        LANGFUSE_HOST = "http://langfuse.100.73.45.27.nip.io"
+        LANGFUSE_PUBLIC_KEY = "pk-lf-62de1c00-beee-4519-933c-ae4ce2dafbef"
+        LANGFUSE_SECRET_KEY = "sk-lf-825cd051-6ed4-4bb1-8cb2-3576be4d48a2"
       }
 
       resources {
