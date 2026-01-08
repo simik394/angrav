@@ -113,6 +113,205 @@ function generateFilename(title: string, suffix: string = ''): string {
     return `${datePart}_${timePart}_${safeName}${suffix}.md`;
 }
 
+// Session export metadata for index generation
+interface SessionExport {
+    filename: string;
+    title: string;
+    itemCount: number;
+    exportedAt: string;
+    sessionId?: string;
+}
+
+// Generate beautiful HTML index page
+function generateHtmlIndex(sessions: SessionExport[], outputDir: string): void {
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Antigravity Session Archive</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 2rem;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        .stats {
+            color: #888;
+            font-size: 0.95rem;
+        }
+        .search-box {
+            margin: 2rem 0;
+            position: relative;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 1rem 1rem 1rem 3rem;
+            font-size: 1rem;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 12px;
+            color: #fff;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        .search-box input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.2rem;
+        }
+        .sessions {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+        .session-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .session-card:hover {
+            transform: translateY(-4px);
+            background: rgba(255,255,255,0.08);
+            border-color: #667eea;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+        }
+        .session-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .session-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: #888;
+        }
+        .session-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: #fff;
+            margin-top: 0.75rem;
+        }
+        .hidden { display: none !important; }
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            color: #666;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Antigravity Session Archive</h1>
+            <p class="stats">
+                ${sessions.length} sessions • ${sessions.reduce((a, s) => a + s.itemCount, 0).toLocaleString()} total items • 
+                Generated ${new Date().toLocaleString()}
+            </p>
+        </header>
+        
+        <div class="search-box">
+            <input type="text" id="search" placeholder="Search sessions..." autocomplete="off">
+        </div>
+        
+        <div class="sessions">
+            ${sessions.map(s => `
+            <a href="${s.filename}" class="session-card" data-title="${s.title.toLowerCase()}">
+                <div class="session-title">${escapeHtml(s.title)}</div>
+                <div class="session-meta">
+                    <span>📄 ${s.itemCount} items</span>
+                    <span>🕐 ${new Date(s.exportedAt).toLocaleDateString()}</span>
+                </div>
+                ${s.sessionId ? `<span class="badge">${s.sessionId.slice(0, 8)}</span>` : ''}
+            </a>
+            `).join('')}
+        </div>
+        
+        <footer>
+            <p>Exported with 🤖 Angrav • <a href="https://github.com/simik394/osobni_wf" style="color: #667eea;">View on GitHub</a></p>
+        </footer>
+    </div>
+    
+    <script>
+        const searchInput = document.getElementById('search');
+        const cards = document.querySelectorAll('.session-card');
+        
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            cards.forEach(card => {
+                const title = card.dataset.title;
+                if (title.includes(query)) {
+                    card.classList.remove('hidden');
+                } else {
+                    card.classList.add('hidden');
+                }
+            });
+        });
+    </script>
+</body>
+</html>`;
+
+    const indexPath = path.join(outputDir, 'index.html');
+    fs.writeFileSync(indexPath, html);
+    console.log(`📄 Generated HTML index: ${indexPath}`);
+}
+
+function escapeHtml(text: string): string {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 async function main() {
     const args = process.argv.slice(2);
 
@@ -122,6 +321,14 @@ async function main() {
     const incremental = args.includes('--incremental') || args.includes('-i');
     const fresh = args.includes('--fresh') || args.includes('-f');
     const showTokens = args.includes('--tokens') || args.includes('-t');
+    const generateIndex = args.includes('--html-index') || args.includes('--index');
+
+    // Parse output directory
+    const outputDirIdx = args.indexOf('--output-dir');
+    let outputDir: string | null = null;
+    if (outputDirIdx !== -1 && args[outputDirIdx + 1]) {
+        outputDir = args[outputDirIdx + 1];
+    }
 
     // Parse limit
     const limitArgIndex = args.indexOf('--limit');
@@ -155,10 +362,13 @@ async function main() {
         console.log('   Scope: ACTIVE session only');
     }
 
-    const dumpDir = path.resolve(process.cwd(), 'history_dump');
+    const dumpDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), 'history_dump');
     if (!fs.existsSync(dumpDir)) {
         fs.mkdirSync(dumpDir, { recursive: true });
     }
+
+    // Track exported sessions for HTML index
+    const exportedSessions: SessionExport[] = [];
 
     let browser;
     try {
@@ -283,6 +493,14 @@ async function main() {
                     fs.writeFileSync(filePath, fileContent);
                     console.log(`  💾 Saved ${dedupedItems.length} items to: ${filePath}`);
 
+                    // Track for HTML index
+                    exportedSessions.push({
+                        filename: fileName,
+                        title: pageTitle,
+                        itemCount: dedupedItems.length,
+                        exportedAt: new Date().toISOString(),
+                    });
+
                     // Token counting
                     if (showTokens) {
                         console.log(`  🔢 Counting tokens with Gemini...`);
@@ -343,8 +561,22 @@ async function main() {
                     const filePath = path.join(dumpDir, fileName);
                     fs.writeFileSync(filePath, fileContent);
                     console.log(`  💾 Saved to: ${filePath}`);
+
+                    // Track for HTML index
+                    exportedSessions.push({
+                        filename: fileName,
+                        title: session.name,
+                        itemCount: items.length,
+                        exportedAt: new Date().toISOString(),
+                        sessionId: session.id,
+                    });
                 }
             }
+        }
+
+        // Generate HTML index if requested
+        if (generateIndex && exportedSessions.length > 0) {
+            generateHtmlIndex(exportedSessions, dumpDir);
         }
 
         console.log('\n✅ Dump complete.');
