@@ -55,3 +55,46 @@
 ### 3. Comparing Multiple Feature Branches
 - **Issue:** Multiple branches existed for similar features (`jules-infra-...` and `feat-add-windmill-...`).
 - **Solution:** Compared the branches using `git diff branch1 branch2` to identify which one was more advanced and complete, ensuring the best version was merged into `main`.
+
+## Feature: Session History ETL
+**Date:** 2026-01-08
+
+### 1. HAR File Analysis for Architecture Discovery
+- **Context:** Captured network logs from Antigravity to understand session data storage.
+- **Findings:**
+  - API uses gRPC-Connect protocol (`exa.language_server_pb`, `exa.extension_server_pb`)
+  - `StreamCascadeReactiveUpdates` endpoint streams 2.8MB binary protobuf per session
+  - Cascade IDs (UUIDs) in API requests match `.pb` files in `~/.gemini/antigravity/conversations/`
+  - Binary content captured as `application/connect+proto` MIME type, not readable as text in HAR
+- **Lesson:** HAR files are useful for architectural reconnaissance even when binary content isn't directly usable.
+
+### 2. Proprietary Protobuf Format
+- **Issue:** `.pb` files in `~/.gemini/antigravity/conversations/` appear encrypted/compressed.
+- **Analysis:** Files show as `data` type with high entropy (not plain protobuf), suggesting:
+  1. **Encryption at rest** - Local files may be encrypted for security
+  2. **Custom compression** - May use non-standard compression before serialization
+  3. **Protobuf wire format** - Even unencrypted protobuf needs schema to decode
+- **Potential reverse engineering approaches (not yet attempted):**
+  1. **Electron DevTools inspection** - Set breakpoints in renderer process to find encode/decode functions
+  2. **Source map extraction** - Look for `workbench.desktop.main.js.map` with original TypeScript
+  3. **Memory inspection** - Dump decrypted session data from running process
+  4. **Node.js module hooking** - Intercept protobuf serialize/deserialize calls
+  5. **Frida instrumentation** - Hook native crypto functions to capture keys
+- **Decision:** DOM scraping via existing angrav tools is more practical than reverse engineering.
+
+### 3. When DOM Scraping Beats API Reverse Engineering
+- **Issue:** Needed to export all session histories but API format was proprietary.
+- **Solution:** Leveraged existing `getStructuredHistory()` function that scrapes the visible DOM.
+- **Tradeoffs:**
+  | Approach | Pros | Cons |
+  |----------|------|------|
+  | DOM Scraping | Works now, no RE needed | Requires running Antigravity UI |
+  | API RE | Could work offline | Time-intensive, may break on updates |
+  | Protobuf Decoding | Direct file access | Needs encryption keys + schema |
+- **Lesson:** When a working DOM-based solution exists, prefer it over speculative RE unless offline access is critical.
+
+### 4. Session Metadata from SQLite State DB
+- **Discovery:** `~/.config/Antigravity/User/globalStorage/state.vscdb` contains:
+  - Session UUIDs and titles (base64-encoded protobuf in `jetskiStateSync.agentManagerInitState`)
+  - Chat session index (empty in `chat.ChatSessionStore.index`)
+- **Usage:** Could be used to enumerate sessions without Agent Manager UI, but titles are truncated.
