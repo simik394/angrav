@@ -285,7 +285,7 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
 
     if (expandedCount > 0) {
         console.log(`  🔓 Expanded ${expandedCount} sections (Progress/Thoughts/Files)`);
-        await frame.waitForTimeout(400); // Wait for expanded content to render
+        await frame.waitForTimeout(1000); // Wait longer for expanded content to render
     }
 
     return expandedCount;
@@ -910,11 +910,14 @@ export async function getStructuredHistory(frame: Frame, limitPx?: number): Prom
             return 0;
         }, targetPos);
 
-        await frame.waitForTimeout(200); // Wait for render
+        await frame.waitForTimeout(800); // Wait longer for render + expansion settle
 
         // Expand visible sections (Thoughts, Progress, Files)
         await expandCollapsedSections(frame);
         // Note: expandCollapsedSections has internal wait if it performs actions
+
+        // Extra pause to capture content before next scroll
+        await frame.waitForTimeout(500);
 
         // Extract content immediately while expanded
         const visibleItems = await extractVisibleItems();
