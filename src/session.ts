@@ -114,7 +114,25 @@ export async function getConversationHistory(frame: Frame): Promise<Conversation
     };
 }
 
-export type MessageType = 'user' | 'agent' | 'thought' | 'tool-call' | 'tool-output';
+export type MessageType =
+    | 'user'           // User messages/prompts
+    | 'agent'          // Agent prose responses
+    | 'thought'        // Agent thinking/reasoning
+    | 'tool-call'      // Tool invocation header
+    | 'tool-call-arg'  // Tool arguments (JSON)
+    | 'tool-output'    // Tool execution output
+    | 'tool-result'    // Tool result button
+    | 'code'           // Code blocks
+    | 'terminal'       // Terminal commands with output
+    | 'file-change'    // File change summary
+    | 'file-link'      // Clickable file path
+    | 'file-diff'      // Diff content (added/removed lines)
+    | 'task-status'    // Planning/Executing/Verifying
+    | 'timestamp'      // Time markers
+    | 'approval'       // Accept/Reject buttons
+    | 'error'          // Error messages
+    | 'image'          // Image attachments
+    | 'table';         // Tables
 
 export interface StructuredMessage {
     type: MessageType;
@@ -277,6 +295,37 @@ async function expandCollapsedSections(frame: Frame): Promise<number> {
             (row as HTMLElement).click();
             fileChangeCount++;
             expandedSet.add(row);
+            count++;
+        }
+
+        // Click "Open diff" buttons to expand inline diffs
+        // These appear next to "Edited {filename}" entries
+        const openDiffButtons = Array.from(document.querySelectorAll('span, button, div'))
+            .filter(el => {
+                const text = el.textContent?.trim().toLowerCase() || '';
+                return text === 'open diff' || text === 'show diff' || text === 'view diff';
+            });
+
+        for (const btn of openDiffButtons) {
+            if (expandedSet.has(btn)) continue;
+            console.log('      🖱️ Clicking Open diff button');
+            (btn as HTMLElement).click();
+            expandedSet.add(btn);
+            count++;
+        }
+
+        // Also click any "Show changes" or similar diff reveal buttons
+        const changeButtons = Array.from(document.querySelectorAll('button, span[role="button"]'))
+            .filter(el => {
+                const text = el.textContent?.trim().toLowerCase() || '';
+                return text.includes('show change') || text.includes('view change') ||
+                    text.includes('expand diff') || text.includes('show full');
+            });
+
+        for (const btn of changeButtons) {
+            if (expandedSet.has(btn)) continue;
+            (btn as HTMLElement).click();
+            expandedSet.add(btn);
             count++;
         }
 

@@ -35,6 +35,11 @@ services:
         reservations:
           memory: 2G
 
+    # Enable iptables for mitmproxy and Frida for instrumentation
+    cap_add:
+      - NET_ADMIN
+      - SYS_PTRACE
+
     restart: unless-stopped
 
   # Worker container - lightweight, fast rebuilds

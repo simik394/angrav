@@ -34,7 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     procps \
     xdotool \
+    iptables \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install mitmproxy and frida-tools for gRPC capture/instrumentation
+RUN pip3 install mitmproxy frida-tools --break-system-packages
 
 # Install Antigravity (Google's VS Codium fork)
 # Note: GPG key is bundled since remote URL is not publicly accessible
