@@ -5,7 +5,7 @@
 
 set -e
 
-REPO_ROOT="/home/ubuntu/Prods/01pwf"
+REPO_ROOT="/home/ubuntu/Obsi/Prods/01-pwf"
 APP_DIR="${REPO_ROOT}/agents/angrav"
 REGISTRY="localhost:5001"
 IMAGE_NAME="angrav-browser"
