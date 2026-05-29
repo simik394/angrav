@@ -26,13 +26,8 @@ job "angrav-browser" {
       config {
         image        = "localhost:5001/angrav-browser:latest"
         network_mode = "host"
+        shm_size     = 1073741824  # 1GB shared memory for Chromium stability
         
-        # Add required capabilities for Electron/Chromium in Docker
-        cap_add = [
-          "NET_ADMIN",
-          "SYS_PTRACE"
-        ]
-
         volumes = [
           # Profile data (contains authenticated Google account state)
           "/opt/angrav/profiles/default:/home/angrav/.config/Antigravity",
