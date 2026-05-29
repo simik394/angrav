@@ -1,86 +1,30 @@
-FROM node:20-bookworm
+FROM mcr.microsoft.com/playwright:v1.57.0-jammy
 
-LABEL maintainer="angrav-automation"
-LABEL description="Standalone Antigravity IDE with embedded automation"
+WORKDIR /app
 
-# Set environment
-ENV DEBIAN_FRONTEND=noninteractive
-ENV DISPLAY=:99
-ENV NODE_ENV=production
+# Copy package files first for layer caching
+COPY angrav/package.json angrav/package-lock.json* ./
+COPY shared ./shared/
 
-# Install X11, VNC, and Electron dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Virtual display
-    xvfb \
-    x11vnc \
-    xdotool \
-    # Window manager (lightweight)
-    fluxbox \
-    # Electron/Chromium dependencies
-    libx11-xcb1 \
-    libxcb-dri3-0 \
-    libxtst6 \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libxss1 \
-    libasound2 \
-    libgbm1 \
-    libdrm2 \
-    libxshmfence1 \
-    # Utilities
-    supervisor \
-    wget \
-    curl \
-    ca-certificates \
-    gnupg \
-    dbus-x11 \
-    procps \
-    && rm -rf /var/lib/apt/lists/*
+# Update package.json to point to the correct shared module path
+RUN sed -i 's|file:../shared|file:./shared|g' package.json
 
-# Add Codeium repository and install Windsurf (Antigravity)
-RUN curl -fsSL https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg | gpg --dearmor -o /usr/share/keyrings/windsurf-archive-keyring.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/windsurf-archive-keyring.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" > /etc/apt/sources.list.d/windsurf.list \
-    && apt-get update \
-    && apt-get install -y windsurf \
-    && rm -rf /var/lib/apt/lists/*
+# Build shared library first (required for CI where dist/ is missing)
+RUN cd shared && npm install && npm run build
 
-# Create non-root user (Electron prefers this)
-RUN useradd -m -s /bin/bash angrav \
-    && mkdir -p /home/angrav/.config/Windsurf \
-    && mkdir -p /workspace/tasks /workspace/output /workspace/project \
-    && chown -R angrav:angrav /home/angrav /workspace
+# Install dependencies (browsers are already in the image)
+RUN npm install
 
-# Install Playwright and dependencies
-WORKDIR /opt/angrav
-COPY package*.json ./
-RUN npm install --production \
-    && npx playwright install chromium \
-    && npx playwright install-deps
+# Copy angrav source files
+COPY angrav/src ./src/
+COPY angrav/tsconfig.json ./
+COPY angrav/playwright.config.ts ./
 
-# Copy automation code
-COPY src/ ./src/
-COPY docker/worker.ts ./worker.ts
-COPY tsconfig.json ./
+# Build TypeScript
+RUN npm run build
 
-# Supervisord configuration
-COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Expose HTTP server port
+EXPOSE 3031
 
-# Fix chrome-sandbox permissions for Electron
-RUN chmod 4755 /usr/share/windsurf/chrome-sandbox 2>/dev/null || true
-
-# Expose ports
-# 9222 = CDP (Chrome DevTools Protocol)
-# 5900 = VNC
-EXPOSE 9222 5900
-
-# Volumes
-VOLUME ["/workspace", "/home/angrav/.config/Windsurf"]
-
-# Set user
-USER angrav
-WORKDIR /workspace
-
-ENTRYPOINT ["/entrypoint.sh"]
+# Default: Run the HTTP server
+CMD ["node", "dist/cli.js", "serve", "--port", "3031", "--host", "0.0.0.0"]
