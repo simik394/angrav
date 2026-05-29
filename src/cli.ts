@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Command } from 'commander';
 import { connectToApp, getAgentFrame } from './core';
 import { getAgentState, waitForIdle, StateInfo } from './state';
