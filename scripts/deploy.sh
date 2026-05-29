@@ -16,11 +16,7 @@ echo "🚀 [Deploy] Starting deployment from ${APP_DIR}..."
 # 1. Update source code (assuming this script is called after a git pull/push)
 # If this is called from a post-receive hook, the code is already updated in the work-tree.
 
-# 2. Build Shared Library
-echo "📦 [Deploy] Building @agents/shared..."
-cd "${REPO_ROOT}/agents/shared"
-npm install --silent
-npm run build
+# 2. Build Shared Library (Not required for browser container)
 
 # 3. Build angrav-browser Docker Image
 echo "🐳 [Deploy] Building Docker image: ${REGISTRY}/${IMAGE_NAME}:latest..."
